@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - SpendWise{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+
+<div class="summary-grid">
+    <div class="summary-item">
+        <span class="summary-label">Total Expenses</span>
+        <span class="summary-value">₹{{ "%.0f"|format(summary.total_expenses) }}</span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">Remaining Budget</span>
+        <span class="summary-value">
+            {% if summary.remaining_budget is not none %}
+                ₹{{ "%.0f"|format(summary.remaining_budget) }}
+            {% else %}—{% endif %}
+        </span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">Largest Category</span>
+        <span class="summary-value">{{ summary.largest_category }}</span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">Active Subscriptions</span>
+        <span class="summary-value">{{ summary.active_subscriptions }}</span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">Monthly Subscription Cost</span>
+        <span class="summary-value">₹{{ "%.0f"|format(summary.monthly_subscription_cost) }}</span>
+    </div>
+</div>
+
+<div class="card insights-card">
+    <h3>Insights &amp; Suggestions</h3>
+    <ul class="insights-list">
+        {% for insight in insights %}
+        <li class="insight-{{ insight.type }}">{{ insight.text }}</li>
+        {% endfor %}
+    </ul>
+</div>
+
+{% if budget_alerts %}
+<div class="alerts">
+    {% for alert in budget_alerts %}
+        <div class="flash flash-{{ 'error' if alert.level in ['danger','over'] else 'warning' }}">
+            {{ alert.name }}: ₹{{ "%.0f"|format(alert.spent) }} of ₹{{ "%.0f"|format(alert.budget) }} budget
+            ({{ "%.0f"|format(alert.pct) }}% used)
+            {% if alert.level == 'over' %} — over budget!
+            {% elif alert.level == 'danger' %} — 90%+ used, nearly at limit
+            {% elif alert.level == 'warning' %} — 75%+ used
+            {% else %} — 50%+ used
+            {% endif %}
+        </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div class="chart-grid">
+    <div class="chart-box">
+        <h3>Spend by Category</h3>
+        <canvas id="categoryChart"></canvas>
+    </div>
+    <div class="chart-box">
+        <h3>Last 6 Months</h3>
+        <canvas id="trendChart"></canvas>
+    </div>
+    {% if budget_vs_spend %}
+    <div class="chart-box">
+        <h3>Budget vs Spending</h3>
+        <canvas id="budgetChart"></canvas>
+    </div>
+    {% endif %}
+    {% if top_categories %}
+    <div class="chart-box">
+        <h3>Top Spending Categories (All-Time)</h3>
+        <canvas id="topCatChart"></canvas>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+const LEDGER_COLORS = ['#0F6B4C','#C89B3C','#B23A2F','#5B7A8C','#8A6A1F','#4A8C6F','#94A3AD','#2F4858'];
+
+new Chart(document.getElementById('categoryChart'), {
+    type: 'doughnut',
+    data: {
+        labels: {{ category_totals|map(attribute='name')|list|tojson }},
+        datasets: [{
+            data: {{ category_totals|map(attribute='total')|list|tojson }},
+            backgroundColor: LEDGER_COLORS,
+            borderWidth: 2,
+            borderColor: '#FFFFFF'
+        }]
+    },
+    options: {
+        plugins: { legend: { position: 'bottom', labels: { font: { family: 'Inter', size: 11 } } } }
+    }
+});
+
+new Chart(document.getElementById('trendChart'), {
+    type: 'line',
+    data: {
+        labels: {{ trend|map(attribute='label')|list|tojson }},
+        datasets: [{
+            label: 'Spend',
+            data: {{ trend|map(attribute='total')|list|tojson }},
+            borderColor: '#0F6B4C',
+            backgroundColor: 'rgba(15,107,76,0.08)',
+            fill: true,
+            tension: 0.3,
+            pointBackgroundColor: '#0F6B4C'
+        }]
+    },
+    options: {
+        plugins: { legend: { display: false } },
+        scales: { y: { ticks: { font: { family: 'JetBrains Mono', size: 10 } } }, x: { ticks: { font: { family: 'Inter', size: 11 } } } }
+    }
+});
+
+{% if budget_vs_spend %}
+new Chart(document.getElementById('budgetChart'), {
+    type: 'bar',
+    data: {
+        labels: {{ budget_vs_spend|map(attribute='name')|list|tojson }},
+        datasets: [
+            { label: 'Spent', data: {{ budget_vs_spend|map(attribute='spent')|list|tojson }}, backgroundColor: '#B23A2F' },
+            { label: 'Budget', data: {{ budget_vs_spend|map(attribute='budget')|list|tojson }}, backgroundColor: '#0F6B4C' }
+        ]
+    },
+    options: {
+        plugins: { legend: { position: 'bottom', labels: { font: { family: 'Inter', size: 11 } } } },
+        scales: { y: { ticks: { font: { family: 'JetBrains Mono', size: 10 } } } }
+    }
+});
+{% endif %}
+
+{% if top_categories %}
+new Chart(document.getElementById('topCatChart'), {
+    type: 'bar',
+    data: {
+        labels: {{ top_categories|map(attribute='name')|list|tojson }},
+        datasets: [{
+            label: 'All-Time Spend',
+            data: {{ top_categories|map(attribute='total')|list|tojson }},
+            backgroundColor: '#C89B3C'
+        }]
+    },
+    options: {
+        indexAxis: 'y',
+        plugins: { legend: { display: false } },
+        scales: { x: { ticks: { font: { family: 'JetBrains Mono', size: 10 } } } }
+    }
+});
+{% endif %}
+</script>
+{% endblock %}

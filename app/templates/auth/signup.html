@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Sign Up - SpendWise{% endblock %}
+{% block content %}
+<div class="auth-wrap">
+    <div class="auth-logo"><span class="brand-mark">SW</span> SpendWise</div>
+    <div class="auth-card">
+        <h1>Create your account</h1>
+        <p class="auth-sub">Track spending. Catch forgotten subscriptions.</p>
+        <form method="POST">
+            <label for="name">Name</label>
+            <input type="text" id="name" name="name" required>
+
+            <label for="email">Email</label>
+            <input type="email" id="email" name="email" required>
+
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" required>
+
+            <button type="submit" class="btn btn-primary">Sign Up</button>
+        </form>
+        <p>Already have an account? <a href="{{ url_for('auth.login') }}">Log in</a></p>
+    </div>
+</div>
+{% endblock %}

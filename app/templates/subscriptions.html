@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Subscriptions - SpendWise{% endblock %}
+{% block content %}
+<h1>Subscription Audit</h1>
+
+<div class="summary-grid">
+    <div class="summary-item">
+        <span class="summary-label">Monthly Burden</span>
+        <span class="summary-value">₹{{ "%.0f"|format(monthly_burden) }}</span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">% of Total Budget</span>
+        <span class="summary-value">
+            {% if subscription_pct_of_budget is not none %}{{ "%.0f"|format(subscription_pct_of_budget) }}%{% else %}—{% endif %}
+        </span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">Active Subscriptions</span>
+        <span class="summary-value">{{ recurring|length }}</span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">Needing Review</span>
+        <span class="summary-value">{{ needs_review|length }}</span>
+    </div>
+</div>
+
+{% if oldest_unreviewed %}
+<div class="flash flash-warning">
+    Oldest unreviewed subscription: <strong>{{ oldest_unreviewed.note or oldest_unreviewed.category.name }}</strong>
+    (₹{{ "%.0f"|format(oldest_unreviewed.amount) }}/{{ oldest_unreviewed.recurrence_period }}) — review this one first.
+</div>
+{% endif %}
+
+{% if needs_review %}
+<h3>Needs Review <span class="section-note">60+ days since last check</span></h3>
+<div class="card">
+    <table class="table">
+        <thead><tr><th>Note</th><th>Category</th><th>Amount</th><th>Frequency</th><th></th></tr></thead>
+        <tbody>
+        {% for e in needs_review %}
+            <tr>
+                <td>{{ e.note or "-" }}</td>
+                <td>{{ e.category.name }}</td>
+                <td class="amount">₹{{ "%.2f"|format(e.amount) }}</td>
+                <td><span class="tag tag-recurring">{{ e.recurrence_period|capitalize }}</span></td>
+                <td>
+                    <form method="POST" action="{{ url_for('expenses.mark_reviewed', expense_id=e.id) }}">
+                        <button type="submit" class="btn btn-secondary btn-sm">Still using this</button>
+                    </form>
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<h3>Ranked by Monthly Cost</h3>
+<div class="card">
+    {% if ranked %}
+    <table class="table">
+        <thead><tr><th>Note</th><th>Category</th><th>Original</th><th>Frequency</th><th>Monthly Equivalent</th></tr></thead>
+        <tbody>
+        {% for e in ranked %}
+            <tr>
+                <td>{{ e.note or "-" }}</td>
+                <td>{{ e.category.name }}</td>
+                <td class="amount">₹{{ "%.2f"|format(e.amount) }}</td>
+                <td><span class="tag tag-recurring">{{ e.recurrence_period|capitalize }}</span></td>
+                <td class="amount amount-strong">₹{{ "%.2f"|format(e.monthly_equivalent) }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty-state">No recurring expenses tracked yet.</p>
+    {% endif %}
+</div>
+
+{% if calendar_entries %}
+<h3>Recurring Payment Calendar</h3>
+<div class="card">
+    <p class="empty-state" style="margin-bottom:0.75rem;">Day-of-month each recurring payment was originally logged.</p>
+    <table class="table">
+        <thead><tr><th>Day</th><th>Note</th><th>Category</th><th>Amount</th></tr></thead>
+        <tbody>
+        {% for entry in calendar_entries %}
+            <tr>
+                <td><span class="day-badge">{{ entry.day }}</span></td>
+                <td>{{ entry.expense.note or "-" }}</td>
+                <td>{{ entry.expense.category.name }}</td>
+                <td class="amount">₹{{ "%.2f"|format(entry.expense.amount) }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}
