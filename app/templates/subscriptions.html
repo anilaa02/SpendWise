@@ -1,15 +1,24 @@
 {% extends "base.html" %}
-{% block title %}Subscriptions - SpendWise{% endblock %}
+{% block title %}Subscription Audit - SpendWise{% endblock %}
 {% block content %}
-<h1>Subscription Audit</h1>
+<div class="header-row">
+    <div>
+        <h1>Subscription Audit &amp; Control</h1>
+        <p class="section-subtitle">Prevent subscription creep, track renewal cycles, and verify ongoing service utility.</p>
+    </div>
+</div>
 
 <div class="summary-grid">
     <div class="summary-item">
         <span class="summary-label">Monthly Burden</span>
-        <span class="summary-value">₹{{ "%.0f"|format(monthly_burden) }}</span>
+        <span class="summary-value amount-strong">{{ currency_sym }}{{ "%.2f"|format(monthly_burden) }}</span>
     </div>
     <div class="summary-item">
-        <span class="summary-label">% of Total Budget</span>
+        <span class="summary-label">Annual Projected Cost</span>
+        <span class="summary-value">{{ currency_sym }}{{ "%.2f"|format(annual_burden) }}</span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">% of Monthly Budget</span>
         <span class="summary-value">
             {% if subscription_pct_of_budget is not none %}{{ "%.0f"|format(subscription_pct_of_budget) }}%{% else %}—{% endif %}
         </span>
@@ -20,80 +29,174 @@
     </div>
     <div class="summary-item">
         <span class="summary-label">Needing Review</span>
-        <span class="summary-value">{{ needs_review|length }}</span>
+        <span class="summary-value {{ 'text-brick' if needs_review|length > 0 else '' }}">{{ needs_review|length }}</span>
     </div>
 </div>
 
 {% if oldest_unreviewed %}
 <div class="flash flash-warning">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon-inline"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
     Oldest unreviewed subscription: <strong>{{ oldest_unreviewed.note or oldest_unreviewed.category.name }}</strong>
-    (₹{{ "%.0f"|format(oldest_unreviewed.amount) }}/{{ oldest_unreviewed.recurrence_period }}) — review this one first.
+    ({{ currency_sym }}{{ "%.2f"|format(oldest_unreviewed.amount) }}/{{ oldest_unreviewed.recurrence_period }}) — has not been confirmed in over 60 days.
 </div>
 {% endif %}
 
 {% if needs_review %}
-<h3>Needs Review <span class="section-note">60+ days since last check</span></h3>
+<h3>Needs Review <span class="section-note">Active subscriptions unverified for 60+ days</span></h3>
 <div class="card">
-    <table class="table">
-        <thead><tr><th>Note</th><th>Category</th><th>Amount</th><th>Frequency</th><th></th></tr></thead>
-        <tbody>
-        {% for e in needs_review %}
-            <tr>
-                <td>{{ e.note or "-" }}</td>
-                <td>{{ e.category.name }}</td>
-                <td class="amount">₹{{ "%.2f"|format(e.amount) }}</td>
-                <td><span class="tag tag-recurring">{{ e.recurrence_period|capitalize }}</span></td>
-                <td>
-                    <form method="POST" action="{{ url_for('expenses.mark_reviewed', expense_id=e.id) }}">
-                        <button type="submit" class="btn btn-secondary btn-sm">Still using this</button>
-                    </form>
-                </td>
-            </tr>
-        {% endfor %}
-        </tbody>
-    </table>
+    <div class="table-responsive">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Service / Note</th>
+                    <th>Category</th>
+                    <th style="text-align:right;">Amount</th>
+                    <th>Frequency</th>
+                    <th style="text-align:right;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for e in needs_review %}
+                <tr>
+                    <td><strong>{{ e.note or "-" }}</strong></td>
+                    <td><span class="category-badge">{{ e.category.name }}</span></td>
+                    <td class="amount">{{ currency_sym }}{{ "%.2f"|format(e.amount) }}</td>
+                    <td><span class="tag tag-recurring">{{ e.recurrence_period|capitalize }}</span></td>
+                    <td style="text-align:right; white-space:nowrap;">
+                        <form method="POST" action="{{ url_for('expenses.mark_reviewed', expense_id=e.id) }}" style="display:inline;">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                            <button type="submit" class="btn btn-secondary btn-sm" title="Confirm you are still actively using this">Keep &amp; Verify</button>
+                        </form>
+                        <form method="POST" action="{{ url_for('expenses.toggle_status', expense_id=e.id) }}" style="display:inline;">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                            <input type="hidden" name="status" value="cancelled"/>
+                            <button type="submit" class="btn-link" title="Mark as cancelled">Cancel Plan</button>
+                        </form>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
 {% endif %}
 
-<h3>Ranked by Monthly Cost</h3>
+<h3>All Active Subscriptions &amp; Services</h3>
 <div class="card">
     {% if ranked %}
-    <table class="table">
-        <thead><tr><th>Note</th><th>Category</th><th>Original</th><th>Frequency</th><th>Monthly Equivalent</th></tr></thead>
-        <tbody>
-        {% for e in ranked %}
-            <tr>
-                <td>{{ e.note or "-" }}</td>
-                <td>{{ e.category.name }}</td>
-                <td class="amount">₹{{ "%.2f"|format(e.amount) }}</td>
-                <td><span class="tag tag-recurring">{{ e.recurrence_period|capitalize }}</span></td>
-                <td class="amount amount-strong">₹{{ "%.2f"|format(e.monthly_equivalent) }}</td>
-            </tr>
-        {% endfor %}
-        </tbody>
-    </table>
+    <div class="table-responsive">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Subscription / Service</th>
+                    <th>Category</th>
+                    <th style="text-align:right;">Billed Amount</th>
+                    <th>Cadence</th>
+                    <th style="text-align:right;">Monthly Cost</th>
+                    <th style="text-align:right;">Annual Cost</th>
+                    <th style="text-align:right;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for e in ranked %}
+                <tr>
+                    <td><strong>{{ e.note or "-" }}</strong></td>
+                    <td><span class="category-badge">{{ e.category.name }}</span></td>
+                    <td class="amount">{{ currency_sym }}{{ "%.2f"|format(e.amount) }}</td>
+                    <td><span class="tag tag-recurring">{{ e.recurrence_period|capitalize }}</span></td>
+                    <td class="amount amount-strong">{{ currency_sym }}{{ "%.2f"|format(e.monthly_equivalent) }}</td>
+                    <td class="amount">{{ currency_sym }}{{ "%.2f"|format(e.annual_equivalent) }}</td>
+                    <td style="text-align:right; white-space:nowrap;">
+                        <form method="POST" action="{{ url_for('dashboard.renew_subscription', expense_id=e.id) }}" style="display:inline;" onsubmit="return confirm('Log a renewal expense of {{ currency_sym }}{{ '%.2f'|format(e.amount) }} for today?');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                            <button type="submit" class="btn btn-secondary btn-sm" title="Log renewal transaction for current cycle">+ Log Renewal</button>
+                        </form>
+                        <form method="POST" action="{{ url_for('expenses.toggle_status', expense_id=e.id) }}" style="display:inline;">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                            <input type="hidden" name="status" value="paused"/>
+                            <button type="submit" class="btn-link" title="Pause tracking">Pause</button>
+                        </form>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
     {% else %}
-    <p class="empty-state">No recurring expenses tracked yet.</p>
+    <p class="empty-state">No recurring subscriptions tracked yet. Mark an expense as "Recurring" on the Expenses page!</p>
     {% endif %}
 </div>
 
-{% if calendar_entries %}
-<h3>Recurring Payment Calendar</h3>
+{% if renewals_schedule %}
+<h3>Upcoming Renewal Schedule</h3>
 <div class="card">
-    <p class="empty-state" style="margin-bottom:0.75rem;">Day-of-month each recurring payment was originally logged.</p>
-    <table class="table">
-        <thead><tr><th>Day</th><th>Note</th><th>Category</th><th>Amount</th></tr></thead>
-        <tbody>
-        {% for entry in calendar_entries %}
-            <tr>
-                <td><span class="day-badge">{{ entry.day }}</span></td>
-                <td>{{ entry.expense.note or "-" }}</td>
-                <td>{{ entry.expense.category.name }}</td>
-                <td class="amount">₹{{ "%.2f"|format(entry.expense.amount) }}</td>
-            </tr>
-        {% endfor %}
-        </tbody>
-    </table>
+    <div class="table-responsive">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Estimated Renewal</th>
+                    <th>Service</th>
+                    <th>Category</th>
+                    <th style="text-align:right;">Amount</th>
+                    <th style="text-align:right;">Timeline</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for item in renewals_schedule %}
+                {% if item.next_date %}
+                <tr>
+                    <td><span class="day-badge">{{ item.next_date.strftime('%d %b') }}</span></td>
+                    <td><strong>{{ item.expense.note or item.expense.category.name }}</strong></td>
+                    <td><span class="category-badge">{{ item.expense.category.name }}</span></td>
+                    <td class="amount amount-strong">{{ currency_sym }}{{ "%.2f"|format(item.expense.amount) }}</td>
+                    <td style="text-align:right;">
+                        <span class="tag {{ 'tag-recurring' if item.days_left > 7 else 'tag-danger' }}">
+                            {% if item.days_left == 0 %}Due today{% elif item.days_left == 1 %}Due tomorrow{% else %}in {{ item.days_left }} days{% endif %}
+                        </span>
+                    </td>
+                </tr>
+                {% endif %}
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{% if inactive_recurring %}
+<h3>Paused &amp; Cancelled Subscriptions</h3>
+<div class="card">
+    <div class="table-responsive">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Service</th>
+                    <th>Category</th>
+                    <th style="text-align:right;">Amount</th>
+                    <th>Status</th>
+                    <th style="text-align:right;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for e in inactive_recurring %}
+                <tr>
+                    <td>{{ e.note or "-" }}</td>
+                    <td>{{ e.category.name }}</td>
+                    <td class="amount text-faint">{{ currency_sym }}{{ "%.2f"|format(e.amount) }}</td>
+                    <td><span class="tag tag-{{ e.status }}">{{ e.status|capitalize }}</span></td>
+                    <td style="text-align:right;">
+                        <form method="POST" action="{{ url_for('expenses.toggle_status', expense_id=e.id) }}" style="display:inline;">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                            <input type="hidden" name="status" value="active"/>
+                            <button type="submit" class="btn btn-secondary btn-sm">Reactivate</button>
+                        </form>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
 {% endif %}
 {% endblock %}
+

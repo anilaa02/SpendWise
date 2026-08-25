@@ -1,54 +1,116 @@
 {% extends "base.html" %}
 {% block title %}Dashboard - SpendWise{% endblock %}
 {% block content %}
-<h1>Dashboard</h1>
+<div class="header-row">
+    <div>
+        <h1>Financial Dashboard</h1>
+        <p class="section-subtitle">Real-time ledger overview, budget health, and subscription telemetry.</p>
+    </div>
+</div>
 
 <div class="summary-grid">
     <div class="summary-item">
-        <span class="summary-label">Total Expenses</span>
-        <span class="summary-value">₹{{ "%.0f"|format(summary.total_expenses) }}</span>
+        <span class="summary-label">Total Spent This Month</span>
+        <span class="summary-value">{{ currency_sym }}{{ "%.2f"|format(summary.total_expenses) }}</span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">Total Monthly Budget</span>
+        <span class="summary-value">
+            {% if summary.total_budget %}{{ currency_sym }}{{ "%.0f"|format(summary.total_budget) }}{% else %}—{% endif %}
+        </span>
     </div>
     <div class="summary-item">
         <span class="summary-label">Remaining Budget</span>
-        <span class="summary-value">
+        <span class="summary-value {{ 'text-brick' if summary.remaining_budget is not none and summary.remaining_budget < 0 else '' }}">
             {% if summary.remaining_budget is not none %}
-                ₹{{ "%.0f"|format(summary.remaining_budget) }}
+                {{ currency_sym }}{{ "%.2f"|format(summary.remaining_budget) }}
             {% else %}—{% endif %}
         </span>
     </div>
     <div class="summary-item">
-        <span class="summary-label">Largest Category</span>
-        <span class="summary-value">{{ summary.largest_category }}</span>
+        <span class="summary-label">Avg. Daily Spend</span>
+        <span class="summary-value">{{ currency_sym }}{{ "%.2f"|format(summary.daily_average) }}</span>
     </div>
     <div class="summary-item">
-        <span class="summary-label">Active Subscriptions</span>
-        <span class="summary-value">{{ summary.active_subscriptions }}</span>
-    </div>
-    <div class="summary-item">
-        <span class="summary-label">Monthly Subscription Cost</span>
-        <span class="summary-value">₹{{ "%.0f"|format(summary.monthly_subscription_cost) }}</span>
+        <span class="summary-label">Monthly Subscriptions</span>
+        <span class="summary-value">{{ currency_sym }}{{ "%.2f"|format(summary.monthly_subscription_cost) }}</span>
     </div>
 </div>
 
-<div class="card insights-card">
-    <h3>Insights &amp; Suggestions</h3>
-    <ul class="insights-list">
-        {% for insight in insights %}
-        <li class="insight-{{ insight.type }}">{{ insight.text }}</li>
+{% if upcoming_renewals %}
+<div class="card renewal-card">
+    <div class="card-header-flex">
+        <h3>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon-inline"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+            Upcoming Renewals in Next 30 Days
+        </h3>
+        <a href="{{ url_for('dashboard.subscriptions') }}" class="view-all-link">Manage in Audit &rarr;</a>
+    </div>
+    <div class="renewals-pills">
+        {% for r in upcoming_renewals %}
+        <div class="renewal-pill {{ 'urgent' if r.is_urgent else '' }}">
+            <div class="pill-title">{{ r.expense.note or r.expense.category.name }}</div>
+            <div class="pill-meta">
+                <span class="amount">{{ currency_sym }}{{ "%.2f"|format(r.expense.amount) }}</span>
+                <span class="pill-badge {{ 'pill-badge-urgent' if r.is_urgent else '' }}">
+                    {% if r.days_left == 0 %}Due Today{% elif r.days_left == 1 %}Tomorrow{% else %}in {{ r.days_left }} days{% endif %}
+                </span>
+            </div>
+        </div>
         {% endfor %}
-    </ul>
+    </div>
+</div>
+{% endif %}
+
+<div class="two-col">
+    <!-- Category Budget Progress -->
+    <div class="card">
+        <h3>Category Budget Health</h3>
+        {% if budget_progress_list %}
+        <div class="budget-progress-list">
+            {% for item in budget_progress_list %}
+            <div class="budget-progress-item">
+                <div class="progress-info">
+                    <span class="cat-title"><strong>{{ item.name }}</strong></span>
+                    <span class="cat-figures amount">
+                        {{ currency_sym }}{{ "%.0f"|format(item.spent) }} / {{ currency_sym }}{{ "%.0f"|format(item.budget) }}
+                        <small>({{ "%.0f"|format(item.actual_pct) }}%)</small>
+                    </span>
+                </div>
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill level-{{ item.level }}" style="width: {{ item.pct }}%;"></div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="empty-state">No category budgets set yet. Set monthly limits in the Expenses tab!</p>
+        {% endif %}
+    </div>
+
+    <!-- Insights & Suggestions -->
+    <div class="card insights-card">
+        <h3>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon-inline"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+            Insights &amp; Observations
+        </h3>
+        <ul class="insights-list">
+            {% for insight in insights %}
+            <li class="insight-{{ insight.type }}">{{ insight.text }}</li>
+            {% endfor %}
+        </ul>
+    </div>
 </div>
 
 {% if budget_alerts %}
 <div class="alerts">
     {% for alert in budget_alerts %}
         <div class="flash flash-{{ 'error' if alert.level in ['danger','over'] else 'warning' }}">
-            {{ alert.name }}: ₹{{ "%.0f"|format(alert.spent) }} of ₹{{ "%.0f"|format(alert.budget) }} budget
-            ({{ "%.0f"|format(alert.pct) }}% used)
-            {% if alert.level == 'over' %} — over budget!
-            {% elif alert.level == 'danger' %} — 90%+ used, nearly at limit
-            {% elif alert.level == 'warning' %} — 75%+ used
-            {% else %} — 50%+ used
+            <strong>{{ alert.name }}</strong>: {{ currency_sym }}{{ "%.0f"|format(alert.spent) }} of {{ currency_sym }}{{ "%.0f"|format(alert.budget) }} limit
+            ({{ "%.0f"|format(alert.actual_pct) }}% utilized)
+            {% if alert.level == 'over' %} — Budget exceeded!
+            {% elif alert.level == 'danger' %} — Over 90% reached, immediate attention recommended.
+            {% else %} — 75%+ threshold reached.
             {% endif %}
         </div>
     {% endfor %}
@@ -57,16 +119,16 @@
 
 <div class="chart-grid">
     <div class="chart-box">
-        <h3>Spend by Category</h3>
+        <h3>Spend by Category (This Month)</h3>
         <canvas id="categoryChart"></canvas>
     </div>
     <div class="chart-box">
-        <h3>Last 6 Months</h3>
+        <h3>6-Month Spending Trend</h3>
         <canvas id="trendChart"></canvas>
     </div>
     {% if budget_vs_spend %}
     <div class="chart-box">
-        <h3>Budget vs Spending</h3>
+        <h3>Budget vs. Actual Spending</h3>
         <canvas id="budgetChart"></canvas>
     </div>
     {% endif %}
@@ -81,39 +143,69 @@
 <script>
 const LEDGER_COLORS = ['#0F6B4C','#C89B3C','#B23A2F','#5B7A8C','#8A6A1F','#4A8C6F','#94A3AD','#2F4858'];
 
-new Chart(document.getElementById('categoryChart'), {
-    type: 'doughnut',
-    data: {
-        labels: {{ category_totals|map(attribute='name')|list|tojson }},
-        datasets: [{
-            data: {{ category_totals|map(attribute='total')|list|tojson }},
-            backgroundColor: LEDGER_COLORS,
-            borderWidth: 2,
-            borderColor: '#FFFFFF'
-        }]
-    },
-    options: {
-        plugins: { legend: { position: 'bottom', labels: { font: { family: 'Inter', size: 11 } } } }
-    }
-});
+// Category Doughnut Chart
+const catLabels = {{ category_totals|map(attribute='name')|list|tojson }};
+const catData = {{ category_totals|map(attribute='total')|list|tojson }};
+if (catData.length > 0) {
+    new Chart(document.getElementById('categoryChart'), {
+        type: 'doughnut',
+        data: {
+            labels: catLabels,
+            datasets: [{
+                data: catData,
+                backgroundColor: LEDGER_COLORS,
+                borderWidth: 2,
+                borderColor: '#FFFFFF'
+            }]
+        },
+        options: {
+            plugins: {
+                legend: { position: 'bottom', labels: { font: { family: 'Inter', size: 11 } } },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return ' ' + context.label + ': {{ currency_sym }}' + Number(context.raw).toFixed(2);
+                        }
+                    }
+                }
+            }
+        }
+    });
+} else {
+    document.getElementById('categoryChart').parentElement.innerHTML += '<p class="empty-state">No expense entries logged for this month.</p>';
+}
 
+// 6-Month Trend Line Chart
 new Chart(document.getElementById('trendChart'), {
     type: 'line',
     data: {
         labels: {{ trend|map(attribute='label')|list|tojson }},
         datasets: [{
-            label: 'Spend',
+            label: 'Monthly Spend',
             data: {{ trend|map(attribute='total')|list|tojson }},
             borderColor: '#0F6B4C',
             backgroundColor: 'rgba(15,107,76,0.08)',
             fill: true,
-            tension: 0.3,
-            pointBackgroundColor: '#0F6B4C'
+            tension: 0.35,
+            pointBackgroundColor: '#0F6B4C',
+            pointRadius: 4,
         }]
     },
     options: {
-        plugins: { legend: { display: false } },
-        scales: { y: { ticks: { font: { family: 'JetBrains Mono', size: 10 } } }, x: { ticks: { font: { family: 'Inter', size: 11 } } } }
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                callbacks: {
+                    label: function(context) {
+                        return ' Total: {{ currency_sym }}' + Number(context.raw).toFixed(2);
+                    }
+                }
+            }
+        },
+        scales: {
+            y: { ticks: { font: { family: 'JetBrains Mono', size: 10 } } },
+            x: { ticks: { font: { family: 'Inter', size: 11 } } }
+        }
     }
 });
 
@@ -128,7 +220,16 @@ new Chart(document.getElementById('budgetChart'), {
         ]
     },
     options: {
-        plugins: { legend: { position: 'bottom', labels: { font: { family: 'Inter', size: 11 } } } },
+        plugins: {
+            legend: { position: 'bottom', labels: { font: { family: 'Inter', size: 11 } } },
+            tooltip: {
+                callbacks: {
+                    label: function(context) {
+                        return ' ' + context.dataset.label + ': {{ currency_sym }}' + Number(context.raw).toFixed(2);
+                    }
+                }
+            }
+        },
         scales: { y: { ticks: { font: { family: 'JetBrains Mono', size: 10 } } } }
     }
 });
@@ -147,10 +248,20 @@ new Chart(document.getElementById('topCatChart'), {
     },
     options: {
         indexAxis: 'y',
-        plugins: { legend: { display: false } },
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                callbacks: {
+                    label: function(context) {
+                        return ' Total: {{ currency_sym }}' + Number(context.raw).toFixed(2);
+                    }
+                }
+            }
+        },
         scales: { x: { ticks: { font: { family: 'JetBrains Mono', size: 10 } } } }
     }
 });
 {% endif %}
 </script>
 {% endblock %}
+

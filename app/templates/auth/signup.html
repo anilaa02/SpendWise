@@ -7,14 +7,26 @@
         <h1>Create your account</h1>
         <p class="auth-sub">Track spending. Catch forgotten subscriptions.</p>
         <form method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
             <label for="name">Name</label>
-            <input type="text" id="name" name="name" required>
+            <input type="text" id="name" name="name" placeholder="Alex Morgan" required>
 
             <label for="email">Email</label>
-            <input type="email" id="email" name="email" required>
+            <input type="email" id="email" name="email" placeholder="alex@example.com" required>
+
+            <label for="currency">Primary Currency</label>
+            <select id="currency" name="currency">
+                <option value="INR" selected>INR (₹ - Indian Rupee)</option>
+                <option value="USD">USD ($ - US Dollar)</option>
+                <option value="EUR">EUR (€ - Euro)</option>
+                <option value="GBP">GBP (£ - British Pound)</option>
+                <option value="JPY">JPY (¥ - Japanese Yen)</option>
+                <option value="CAD">CAD (CA$ - Canadian Dollar)</option>
+                <option value="AUD">AUD (A$ - Australian Dollar)</option>
+            </select>
 
             <label for="password">Password</label>
-            <input type="password" id="password" name="password" required>
+            <input type="password" id="password" name="password" placeholder="At least 6 characters" minlength="6" required>
 
             <button type="submit" class="btn btn-primary">Sign Up</button>
         </form>

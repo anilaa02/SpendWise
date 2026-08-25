@@ -1,14 +1,24 @@
 {% extends "base.html" %}
-{% block title %}Expenses - SpendWise{% endblock %}
+{% block title %}Expenses &amp; Categories - SpendWise{% endblock %}
 {% block content %}
-<h1>Expenses</h1>
+<div class="header-row">
+    <div>
+        <h1>Expenses &amp; Ledger</h1>
+        <p class="section-subtitle">Record transactions, manage category budgets, and bulk import records.</p>
+    </div>
+</div>
 
 <div class="two-col">
+    <!-- Add Expense Form -->
     <div class="card">
-        <h3>Add Expense</h3>
+        <h3>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon-inline"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Record Expense
+        </h3>
         <form method="POST" action="{{ url_for('expenses.add_expense') }}">
-            <label>Amount</label>
-            <input type="number" step="0.01" name="amount" required>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+            <label>Amount ({{ currency_sym }})</label>
+            <input type="number" step="0.01" min="0.01" name="amount" placeholder="0.00" required>
 
             <label>Category</label>
             <select name="category_id" required>
@@ -18,116 +28,308 @@
             </select>
 
             <label>Date</label>
-            <input type="date" name="date" value="{{ [] and '' }}">
+            <input type="date" name="date" value="{{ today_str }}">
 
-            <label>Note</label>
-            <input type="text" name="note" placeholder="e.g. Netflix, groceries...">
+            <label>Note / Description</label>
+            <input type="text" name="note" placeholder="e.g. Netflix, Trader Joe's, Uber...">
 
             <label class="checkbox-label">
-                <input type="checkbox" name="is_recurring" id="is_recurring"> Recurring expense
+                <input type="checkbox" name="is_recurring" id="is_recurring"> Recurring Subscription / Bill
             </label>
 
-            <div id="recurrence_wrap" style="display:none;">
-                <label>Recurrence</label>
+            <div id="recurrence_wrap" style="display:none; margin-top: 0.85rem;">
+                <label>Recurrence Cadence</label>
                 <select name="recurrence_period">
+                    <option value="monthly" selected>Monthly</option>
                     <option value="weekly">Weekly</option>
-                    <option value="monthly">Monthly</option>
                     <option value="yearly">Yearly</option>
                 </select>
             </div>
 
-            <button type="submit" class="btn btn-primary">Add Expense</button>
+            <button type="submit" class="btn btn-primary">Save Expense</button>
         </form>
     </div>
 
-    <div class="card">
-        <h3>Add Category</h3>
-        <form method="POST" action="{{ url_for('expenses.add_category') }}">
-            <label>Name</label>
-            <input type="text" name="name" required>
+    <!-- Category & Import Management -->
+    <div>
+        <div class="card">
+            <h3>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon-inline"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                Manage Categories &amp; Budgets
+            </h3>
+            <form method="POST" action="{{ url_for('expenses.add_category') }}" style="margin-bottom: 1.25rem;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                <div class="row-fields">
+                    <div style="flex:2;">
+                        <label>Category Name</label>
+                        <input type="text" name="name" placeholder="e.g. Healthcare" required>
+                    </div>
+                    <div style="flex:1;">
+                        <label>Budget ({{ currency_sym }})</label>
+                        <input type="number" step="0.01" min="0" name="monthly_budget" placeholder="Optional">
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-secondary" style="margin-top: 0.75rem;">+ Add Category</button>
+            </form>
 
-            <label>Monthly Budget (optional)</label>
-            <input type="number" step="0.01" name="monthly_budget">
+            <div class="category-tags-list">
+                {% for cat in categories %}
+                <div class="category-chip">
+                    <span class="cat-chip-name">{{ cat.name }}</span>
+                    {% if cat.monthly_budget %}
+                    <span class="cat-chip-budget amount">{{ currency_sym }}{{ "%.0f"|format(cat.monthly_budget) }}</span>
+                    {% endif %}
+                    <button type="button" class="btn-icon" title="Edit Category" onclick="openEditCategoryModal({{ cat.id }}, '{{ cat.name|escape }}', '{{ cat.monthly_budget or '' }}')">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    </button>
+                    <form method="POST" action="{{ url_for('expenses.delete_category', category_id=cat.id) }}" style="display:inline;" onsubmit="return confirm('Delete category &quot;{{ cat.name }}&quot; and all its expenses?');">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                        <button type="submit" class="btn-icon btn-icon-danger" title="Delete Category">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                        </button>
+                    </form>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
 
-            <button type="submit" class="btn btn-secondary">Add Category</button>
-        </form>
+        <!-- Bulk CSV Import Card -->
+        <div class="card">
+            <h3>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon-inline"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                Bulk Import Expenses (CSV)
+            </h3>
+            <form method="POST" action="{{ url_for('expenses.import_csv') }}" enctype="multipart/form-data" class="import-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                <input type="file" name="file" accept=".csv" required class="file-input">
+                <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem; align-items: center;">
+                    <button type="submit" class="btn btn-secondary">Upload &amp; Import</button>
+                    <a href="{{ url_for('expenses.sample_csv') }}" class="btn-link" style="font-size:0.85rem;">Download Sample CSV Template</a>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
 
+<!-- Search & Filter Card -->
 <div class="card">
-    <h3>Search &amp; Filter</h3>
+    <h3>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon-inline"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        Filter Ledger
+    </h3>
     <form method="GET" action="{{ url_for('expenses.list_expenses') }}" class="filter-form">
         <div class="filter-grid">
             <div>
                 <label>Category</label>
                 <select name="category_id">
-                    <option value="">All</option>
+                    <option value="">All Categories</option>
                     {% for cat in categories %}
                         <option value="{{ cat.id }}" {% if filters.get('category_id')|string == cat.id|string %}selected{% endif %}>{{ cat.name }}</option>
                     {% endfor %}
                 </select>
             </div>
             <div>
-                <label>From</label>
+                <label>From Date</label>
                 <input type="date" name="date_from" value="{{ filters.get('date_from', '') }}">
             </div>
             <div>
-                <label>To</label>
+                <label>To Date</label>
                 <input type="date" name="date_to" value="{{ filters.get('date_to', '') }}">
             </div>
             <div>
-                <label>Min Amount</label>
-                <input type="number" step="0.01" name="min_amount" value="{{ filters.get('min_amount', '') }}">
+                <label>Min ({{ currency_sym }})</label>
+                <input type="number" step="0.01" name="min_amount" placeholder="0.00" value="{{ filters.get('min_amount', '') }}">
             </div>
             <div>
-                <label>Max Amount</label>
-                <input type="number" step="0.01" name="max_amount" value="{{ filters.get('max_amount', '') }}">
+                <label>Max ({{ currency_sym }})</label>
+                <input type="number" step="0.01" name="max_amount" placeholder="9999.00" value="{{ filters.get('max_amount', '') }}">
             </div>
             <div>
-                <label>Keyword</label>
-                <input type="text" name="keyword" placeholder="note contains..." value="{{ filters.get('keyword', '') }}">
+                <label>Keyword Search</label>
+                <input type="text" name="keyword" placeholder="Note contains..." value="{{ filters.get('keyword', '') }}">
             </div>
         </div>
-        <label class="checkbox-label">
-            <input type="checkbox" name="recurring_only" {% if filters.get('recurring_only') %}checked{% endif %}> Recurring/subscriptions only
+        <label class="checkbox-label" style="margin-bottom: 1rem;">
+            <input type="checkbox" name="recurring_only" {% if filters.get('recurring_only') %}checked{% endif %}> Show recurring expenses / subscriptions only
         </label>
-        <button type="submit" class="btn btn-primary">Apply Filters</button>
-        <a href="{{ url_for('expenses.list_expenses') }}" class="btn btn-secondary" style="text-decoration:none;">Clear</a>
+        <div>
+            <button type="submit" class="btn btn-primary">Apply Filters</button>
+            <a href="{{ url_for('expenses.list_expenses') }}" class="btn btn-secondary" style="text-decoration:none;">Reset</a>
+        </div>
     </form>
 </div>
 
+<!-- Ledger Table Card -->
 <div class="card">
-    <h3>All Expenses</h3>
+    <div class="card-header-flex">
+        <h3>Transactions ({{ expenses|length }} Records)</h3>
+        <div class="export-links">
+            <a href="{{ url_for('dashboard.export_csv', scope='all', format='csv') }}" class="btn-link">&darr; Export CSV</a>
+            <a href="{{ url_for('dashboard.export_csv', scope='all', format='json') }}" class="btn-link">&darr; Export JSON</a>
+        </div>
+    </div>
     {% if expenses %}
-    <table class="table">
-        <thead>
-            <tr><th>Date</th><th>Category</th><th>Amount</th><th>Note</th><th>Recurring</th><th></th></tr>
-        </thead>
-        <tbody>
-            {% for e in expenses %}
-            <tr>
-                <td>{{ e.date.strftime('%d %b %Y') }}</td>
-                <td>{{ e.category.name }}</td>
-                <td class="amount">₹{{ "%.2f"|format(e.amount) }}</td>
-                <td>{{ e.note or "-" }}</td>
-                <td>{% if e.is_recurring %}<span class="tag tag-recurring">{{ e.recurrence_period|capitalize }}</span>{% else %}<span class="text-faint">—</span>{% endif %}</td>
-                <td>
-                    <form method="POST" action="{{ url_for('expenses.delete_expense', expense_id=e.id) }}" onsubmit="return confirm('Delete this expense?');">
-                        <button type="submit" class="btn-link">Delete</button>
-                    </form>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="table-responsive">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Category</th>
+                    <th style="text-align:right;">Amount</th>
+                    <th>Note</th>
+                    <th>Type / Status</th>
+                    <th style="text-align:right;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for e in expenses %}
+                <tr>
+                    <td style="white-space:nowrap;">{{ e.date.strftime('%d %b %Y') }}</td>
+                    <td><span class="category-badge">{{ e.category.name }}</span></td>
+                    <td class="amount amount-strong">{{ currency_sym }}{{ "%.2f"|format(e.amount) }}</td>
+                    <td>{{ e.note or "-" }}</td>
+                    <td>
+                        {% if e.is_recurring %}
+                            <span class="tag tag-recurring">{{ e.recurrence_period|capitalize }}</span>
+                            {% if e.status != 'active' %}
+                                <span class="tag tag-{{ e.status }}">{{ e.status|capitalize }}</span>
+                            {% endif %}
+                        {% else %}
+                            <span class="text-faint">One-time</span>
+                        {% endif %}
+                    </td>
+                    <td style="text-align:right; white-space:nowrap;">
+                        <button type="button" class="btn-icon" title="Edit Expense" onclick="openEditExpenseModal({{ e.id }}, {{ e.amount }}, {{ e.category_id }}, '{{ e.date.strftime('%Y-%m-%d') }}', '{{ e.note|escape or '' }}', {{ 'true' if e.is_recurring else 'false' }}, '{{ e.recurrence_period or 'monthly' }}', '{{ e.status }}')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                        </button>
+                        <form method="POST" action="{{ url_for('expenses.delete_expense', expense_id=e.id) }}" style="display:inline;" onsubmit="return confirm('Delete this expense entry?');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                            <button type="submit" class="btn-icon btn-icon-danger" title="Delete Expense">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
     {% else %}
-    <p class="empty-state">No expenses yet. Add your first one above!</p>
+    <p class="empty-state">No transactions match the selected filters. Record your first expense above!</p>
     {% endif %}
+</div>
+
+<!-- Edit Expense Modal -->
+<div class="modal-backdrop" id="editExpenseModal">
+    <div class="modal-card">
+        <h3>Edit Expense</h3>
+        <form method="POST" id="editExpenseForm" action="">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+            <label>Amount ({{ currency_sym }})</label>
+            <input type="number" step="0.01" min="0.01" name="amount" id="modal_expense_amount" required>
+
+            <label>Category</label>
+            <select name="category_id" id="modal_expense_category" required>
+                {% for cat in categories %}
+                    <option value="{{ cat.id }}">{{ cat.name }}</option>
+                {% endfor %}
+            </select>
+
+            <label>Date</label>
+            <input type="date" name="date" id="modal_expense_date" required>
+
+            <label>Note / Description</label>
+            <input type="text" name="note" id="modal_expense_note">
+
+            <label class="checkbox-label">
+                <input type="checkbox" name="is_recurring" id="modal_expense_recurring"> Recurring Expense
+            </label>
+
+            <div id="modal_recurrence_wrap" style="display:none; margin-top:0.75rem;">
+                <label>Recurrence Cadence</label>
+                <select name="recurrence_period" id="modal_expense_period">
+                    <option value="monthly">Monthly</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="yearly">Yearly</option>
+                </select>
+
+                <label>Subscription Status</label>
+                <select name="status" id="modal_expense_status">
+                    <option value="active">Active</option>
+                    <option value="paused">Paused</option>
+                    <option value="cancelled">Cancelled</option>
+                </select>
+            </div>
+
+            <div class="modal-actions">
+                <button type="submit" class="btn btn-primary">Update Expense</button>
+                <button type="button" class="btn btn-secondary" onclick="closeEditExpenseModal()">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Category Modal -->
+<div class="modal-backdrop" id="editCategoryModal">
+    <div class="modal-card">
+        <h3>Edit Category</h3>
+        <form method="POST" id="editCategoryForm" action="">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+            <label>Category Name</label>
+            <input type="text" name="name" id="modal_cat_name" required>
+
+            <label>Monthly Budget Limit ({{ currency_sym }})</label>
+            <input type="number" step="0.01" min="0" name="monthly_budget" id="modal_cat_budget" placeholder="Leave empty for no limit">
+
+            <div class="modal-actions">
+                <button type="submit" class="btn btn-primary">Save Category</button>
+                <button type="button" class="btn btn-secondary" onclick="closeEditCategoryModal()">Cancel</button>
+            </div>
+        </form>
+    </div>
 </div>
 
 <script>
 document.getElementById('is_recurring').addEventListener('change', function() {
     document.getElementById('recurrence_wrap').style.display = this.checked ? 'block' : 'none';
 });
+
+document.getElementById('modal_expense_recurring').addEventListener('change', function() {
+    document.getElementById('modal_recurrence_wrap').style.display = this.checked ? 'block' : 'none';
+});
+
+function openEditExpenseModal(id, amount, categoryId, dateStr, note, isRecurring, period, status) {
+    const form = document.getElementById('editExpenseForm');
+    form.action = `/expenses/${id}/edit`;
+    document.getElementById('modal_expense_amount').value = amount;
+    document.getElementById('modal_expense_category').value = categoryId;
+    document.getElementById('modal_expense_date').value = dateStr;
+    document.getElementById('modal_expense_note').value = note;
+    
+    const recCheck = document.getElementById('modal_expense_recurring');
+    recCheck.checked = isRecurring;
+    document.getElementById('modal_recurrence_wrap').style.display = isRecurring ? 'block' : 'none';
+    document.getElementById('modal_expense_period').value = period;
+    document.getElementById('modal_expense_status').value = status || 'active';
+
+    document.getElementById('editExpenseModal').style.display = 'flex';
+}
+
+function closeEditExpenseModal() {
+    document.getElementById('editExpenseModal').style.display = 'none';
+}
+
+function openEditCategoryModal(id, name, budget) {
+    const form = document.getElementById('editCategoryForm');
+    form.action = `/categories/${id}/edit`;
+    document.getElementById('modal_cat_name').value = name;
+    document.getElementById('modal_cat_budget').value = budget;
+    document.getElementById('editCategoryModal').style.display = 'flex';
+}
+
+function closeEditCategoryModal() {
+    document.getElementById('editCategoryModal').style.display = 'none';
+}
 </script>
 {% endblock %}
+
