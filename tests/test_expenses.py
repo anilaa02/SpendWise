@@ -179,6 +179,80 @@ class ExpensesTestCase(unittest.TestCase):
         self.assertEqual(res_json.status_code, 200)
         self.assertIn(b'"note": "Lunch"', res_json.data)
 
+    def test_duplicate_expense(self):
+        expense = Expense(
+            amount=350.0,
+            note="Coffee & Snacks",
+            date=date(2026, 1, 1),
+            payment_method="Credit Card",
+            category_id=self.category.id,
+            user_id=self.user.id,
+        )
+        db.session.add(expense)
+        db.session.commit()
+
+        response = self.client.post(f"/expenses/{expense.id}/duplicate", follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        duplicates = Expense.query.filter(Expense.note.like("%Coffee & Snacks%")).all()
+        self.assertEqual(len(duplicates), 2)
+        clone = [e for e in duplicates if e.id != expense.id][0]
+        self.assertEqual(clone.amount, 350.0)
+        self.assertEqual(clone.date, date.today())
+        self.assertEqual(clone.payment_method, "Credit Card")
+
+    def test_csv_import_two_step_workflow(self):
+        # 1. Existing expense to trigger duplicate detection
+        existing = Expense(
+            amount=500.0,
+            note="BigBasket weekly",
+            date=date(2026, 8, 10),
+            category_id=self.category.id,
+            user_id=self.user.id,
+        )
+        db.session.add(existing)
+        db.session.commit()
+
+        csv_content = """Date,Category,Amount,Note,Payment Method
+2026-08-10,Groceries,500.00,BigBasket weekly,UPI / Online
+2026-08-12,Dining,750.00,Team Lunch,Credit Card
+2026-08-15,InvalidCat,-100.00,Negative Bad Row,Cash
+"""
+        # Step 1: Preview
+        res_preview = self.client.post(
+            "/expenses/import/preview",
+            data={"file": (io.BytesIO(csv_content.encode("utf-8")), "test.csv")},
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(res_preview.status_code, 200)
+        self.assertIn(b"CSV Import Validation Preview", res_preview.data)
+        self.assertIn(b"Potential Duplicate Transactions", res_preview.data)
+        self.assertIn(b"Invalid / Unparseable Rows", res_preview.data)
+
+        # Step 2: Confirm import with valid rows
+        import json
+        valid_payload = json.dumps([{
+            "date": "2026-08-12",
+            "category": "Dining",
+            "amount": 750.0,
+            "note": "Team Lunch",
+            "payment_method": "Credit Card",
+            "is_recurring": False,
+            "recurrence_period": None,
+        }])
+        res_confirm = self.client.post(
+            "/expenses/import/confirm",
+            data={"valid_data": valid_payload, "include_duplicates": ""},
+            follow_redirects=True,
+        )
+        self.assertEqual(res_confirm.status_code, 200)
+        self.assertIn(b"Successfully imported 1 transaction", res_confirm.data)
+        
+        lunch = Expense.query.filter_by(note="Team Lunch").first()
+        self.assertIsNotNone(lunch)
+        self.assertEqual(lunch.amount, 750.0)
+        self.assertEqual(lunch.payment_method, "Credit Card")
+
 
 if __name__ == "__main__":
     unittest.main()
+

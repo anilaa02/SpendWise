@@ -1,0 +1,211 @@
+﻿{% extends "base.html" %}
+{% block title %}Savings Goals - SpendWise{% endblock %}
+
+{% block content %}
+<div class="header-row">
+    <div>
+        <h1>Savings Goals</h1>
+        <p class="section-subtitle">Set financial targets, automate monthly pacing, and celebrate milestones.</p>
+    </div>
+    <button type="button" class="btn btn-primary" onclick="openAddGoalModal()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon-inline"><path d="M12 5v14M5 12h14"/></svg>
+        New Savings Goal
+    </button>
+</div>
+
+<div class="summary-grid">
+    <div class="summary-item">
+        <span class="summary-label">Total Saved Across Goals</span>
+        <span class="summary-value text-emerald">{{ currency_sym }}{{ "%.2f"|format(total_saved) }}</span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">Total Target Commitment</span>
+        <span class="summary-value">{{ currency_sym }}{{ "%.2f"|format(total_target) }}</span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">Overall Progress</span>
+        <span class="summary-value">{{ overall_progress }}%</span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">Target Monthly Savings</span>
+        <span class="summary-value text-brass">{{ currency_sym }}{{ "%.2f"|format(monthly_savings_needed) }}<small>/mo</small></span>
+    </div>
+</div>
+
+{% if goals %}
+<div class="goals-grid">
+    {% for g in goals %}
+    <div class="goal-card {% if g.is_completed %}goal-completed{% elif g.is_overdue %}goal-overdue{% endif %}">
+        <div class="goal-header">
+            <div>
+                <h3 class="goal-title">{{ g.name }}</h3>
+                <span class="goal-status-tag {% if g.is_completed %}tag-success{% elif g.is_overdue %}tag-danger{% else %}tag-active{% endif %}">
+                    {% if g.is_completed %}✓ Achieved{% elif g.is_overdue %}⚠ Overdue{% else %}In Progress{% endif %}
+                </span>
+            </div>
+            <div class="goal-actions">
+                <button type="button" class="action-btn edit-btn" title="Edit"
+                        onclick="openEditGoalModal({{ g.id }}, '{{ g.name|e }}', '{{ g.target_amount }}', '{{ g.target_date.isoformat() if g.target_date else '' }}', '{{ g.status }}')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </button>
+                <form method="POST" action="{{ url_for('goals.delete', goal_id=g.id) }}" style="display:inline;" onsubmit="return confirm('Delete this savings goal?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                    <button type="submit" class="action-btn delete-btn" title="Delete">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="goal-figures">
+            <span class="goal-saved">{{ currency_sym }}{{ "%.2f"|format(g.current_amount) }}</span>
+            <span class="goal-target">of {{ currency_sym }}{{ "%.2f"|format(g.target_amount) }}</span>
+        </div>
+
+        <div class="progress-bar-bg">
+            <div class="progress-bar-fill {% if g.is_completed %}level-ok{% elif g.progress_pct >= 70 %}level-ok{% elif g.progress_pct >= 40 %}level-notice{% else %}level-warning{% endif %}"
+                 style="width: {{ g.progress_pct }}%;"></div>
+        </div>
+        <div class="goal-pct-row">
+            <span>{{ "%.1f"|format(g.progress_pct) }}% complete</span>
+            <span>{{ currency_sym }}{{ "%.2f"|format(g.remaining_amount) }} remaining</span>
+        </div>
+
+        <div class="goal-footer">
+            {% if g.is_completed %}
+                <p class="goal-note text-emerald">🎉 Congratulations! You have fully achieved this target.</p>
+            {% elif g.required_monthly_savings is not none %}
+                <p class="goal-note">
+                    Save <strong>{{ currency_sym }}{{ "%.0f"|format(g.required_monthly_savings) }}/month</strong>
+                    {% if g.target_date %}to reach target by {{ g.target_date.strftime('%b %Y') }}{% endif %}.
+                </p>
+            {% else %}
+                <p class="goal-note">No target date set. Deposit whenever you have excess cashflow.</p>
+            {% endif %}
+
+            {% if not g.is_completed %}
+            <button type="button" class="btn btn-secondary btn-sm" onclick="openContributeModal({{ g.id }}, '{{ g.name|e }}', {{ g.remaining_amount }})">
+                + Add Money
+            </button>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="card">
+    <p class="empty-state">No savings goals created yet. Click <strong>New Savings Goal</strong> above to start saving for a vacation, emergency fund, or major purchase!</p>
+</div>
+{% endif %}
+
+<!-- Add Goal Modal -->
+<div class="modal-backdrop" id="addGoalModal">
+    <div class="modal-card">
+        <h3>Create New Savings Goal</h3>
+        <form method="POST" action="{{ url_for('goals.add') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
+            <label>Goal Name</label>
+            <input type="text" name="name" placeholder="e.g. MacBook Pro M3, Emergency Fund" required>
+
+            <label>Target Amount ({{ currency_sym }})</label>
+            <input type="number" step="0.01" name="target_amount" placeholder="e.g. 150000" required>
+
+            <label>Initial Saved Amount ({{ currency_sym }})</label>
+            <input type="number" step="0.01" name="current_amount" value="0.00" placeholder="0.00">
+
+            <label>Target Date (Optional)</label>
+            <input type="date" name="target_date" min="{{ today.isoformat() }}">
+
+            <div class="modal-actions">
+                <button type="submit" class="btn btn-primary">Create Goal</button>
+                <button type="button" class="btn btn-secondary" onclick="closeAddGoalModal()">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Contribute Modal -->
+<div class="modal-backdrop" id="contributeModal">
+    <div class="modal-card">
+        <h3 id="contributeTitle">Add Money toward Goal</h3>
+        <form method="POST" id="contributeForm" action="">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
+            <label>Deposit Amount ({{ currency_sym }})</label>
+            <input type="number" step="0.01" name="amount" id="contributeAmount" required>
+
+            <label>Date</label>
+            <input type="date" name="date" value="{{ today.isoformat() }}" required>
+
+            <label>Note / Source</label>
+            <input type="text" name="note" placeholder="e.g. Monthly salary savings">
+
+            <div class="modal-actions">
+                <button type="submit" class="btn btn-primary">Deposit Funds</button>
+                <button type="button" class="btn btn-secondary" onclick="closeContributeModal()">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Goal Modal -->
+<div class="modal-backdrop" id="editGoalModal">
+    <div class="modal-card">
+        <h3>Edit Savings Goal</h3>
+        <form method="POST" id="editGoalForm" action="">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
+            <label>Goal Name</label>
+            <input type="text" name="name" id="editGoalName" required>
+
+            <label>Target Amount ({{ currency_sym }})</label>
+            <input type="number" step="0.01" name="target_amount" id="editGoalTarget" required>
+
+            <label>Target Date</label>
+            <input type="date" name="target_date" id="editGoalDate">
+
+            <label>Status</label>
+            <select name="status" id="editGoalStatus">
+                <option value="in_progress">In Progress</option>
+                <option value="completed">Completed</option>
+                <option value="cancelled">Cancelled</option>
+            </select>
+
+            <div class="modal-actions">
+                <button type="submit" class="btn btn-primary">Update Goal</button>
+                <button type="button" class="btn btn-secondary" onclick="closeEditGoalModal()">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function openAddGoalModal() {
+    document.getElementById('addGoalModal').style.display = 'flex';
+}
+function closeAddGoalModal() {
+    document.getElementById('addGoalModal').style.display = 'none';
+}
+function openContributeModal(id, name, remaining) {
+    document.getElementById('contributeForm').action = '/goals/' + id + '/contribute';
+    document.getElementById('contributeTitle').innerText = 'Add Money toward "' + name + '"';
+    document.getElementById('contributeAmount').value = '';
+    document.getElementById('contributeModal').style.display = 'flex';
+}
+function closeContributeModal() {
+    document.getElementById('contributeModal').style.display = 'none';
+}
+function openEditGoalModal(id, name, target, dateVal, status) {
+    document.getElementById('editGoalForm').action = '/goals/' + id + '/edit';
+    document.getElementById('editGoalName').value = name;
+    document.getElementById('editGoalTarget').value = target;
+    document.getElementById('editGoalDate').value = dateVal;
+    document.getElementById('editGoalStatus').value = status;
+    document.getElementById('editGoalModal').style.display = 'flex';
+}
+function closeEditGoalModal() {
+    document.getElementById('editGoalModal').style.display = 'none';
+}
+</script>
+{% endblock %}

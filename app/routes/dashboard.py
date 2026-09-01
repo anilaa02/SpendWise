@@ -1,14 +1,20 @@
+﻿"""
+Dashboard and Overview Routes for SpendWise.
+Provides financial summaries, savings rates, budget health, financial health scores,
+subscription forecasting, and multi-format data exports.
+"""
 import csv
 import io
 import json
 from datetime import date, timedelta
 from calendar import month_name
-from flask import Blueprint, render_template, Response, request, redirect, url_for, flash, jsonify
+from flask import Blueprint, render_template, Response, request, redirect, url_for, flash
 from flask_login import login_required, current_user
 from sqlalchemy import extract
 from app import db
-from app.models import Expense, Category, User, CURRENCY_MAP
+from app.models import Expense, Category, Income, SavingsGoal, CURRENCY_MAP
 from app.insights import generate_insights
+from app.health_score import calculate_financial_health
 
 dashboard_bp = Blueprint("dashboard", __name__)
 
@@ -36,13 +42,38 @@ def _budget_status(spent, budget):
 def index():
     today = date.today()
 
+    # Current month expenses
     month_expenses = Expense.query.filter(
         Expense.user_id == current_user.id,
         extract("month", Expense.date) == today.month,
         extract("year", Expense.date) == today.year,
     ).all()
-
     total_this_month = sum(e.amount for e in month_expenses)
+
+    # Current month incomes
+    month_incomes = Income.query.filter(
+        Income.user_id == current_user.id,
+        extract("month", Income.date) == today.month,
+        extract("year", Income.date) == today.year,
+    ).all()
+    total_income_this_month = sum(inc.amount for inc in month_incomes)
+
+    net_balance = total_income_this_month - total_this_month
+    savings_rate = (net_balance / total_income_this_month * 100) if total_income_this_month > 0 else None
+
+    # Previous month expenses for MoM comparison
+    pm = today.month - 1 if today.month > 1 else 12
+    py = today.year if today.month > 1 else today.year - 1
+    prev_month_expenses = Expense.query.filter(
+        Expense.user_id == current_user.id,
+        extract("month", Expense.date) == pm,
+        extract("year", Expense.date) == py,
+    ).all()
+    total_prev_month = sum(e.amount for e in prev_month_expenses)
+
+    mom_pct = None
+    if total_prev_month > 0:
+        mom_pct = round(((total_this_month - total_prev_month) / total_prev_month) * 100, 1)
 
     categories = Category.query.filter_by(user_id=current_user.id).all()
     category_totals = []
@@ -70,6 +101,9 @@ def index():
             if level in ["warning", "danger", "over"]:
                 budget_alerts.append(progress_item)
 
+    # Budget utilization
+    budget_utilization = (total_this_month / total_budget * 100) if total_budget and total_budget > 0 else None
+
     # Last 6 months trend
     trend = []
     for i in range(5, -1, -1):
@@ -88,29 +122,13 @@ def index():
         )
         trend.append({"label": f"{month_name[m][:3]} {y}", "total": month_total})
 
-    # Budget vs Spending (per category with a budget)
-    budget_vs_spend = []
-    for cat in categories:
-        if cat.monthly_budget:
-            cat_total = sum(e.amount for e in month_expenses if e.category_id == cat.id)
-            budget_vs_spend.append({"name": cat.name, "spent": cat_total, "budget": cat.monthly_budget})
-
-    # Top spending categories (all-time, top 5)
-    all_expenses = Expense.query.filter_by(user_id=current_user.id).all()
-    all_time_cat_totals = {}
-    for e in all_expenses:
-        all_time_cat_totals[e.category_id] = all_time_cat_totals.get(e.category_id, 0) + e.amount
-    top_categories = sorted(
-        [{"name": c.name, "total": all_time_cat_totals.get(c.id, 0)} for c in categories],
-        key=lambda x: x["total"], reverse=True
-    )[:5]
-    top_categories = [c for c in top_categories if c["total"] > 0]
-
     # Subscriptions & Upcoming Renewals
+    all_expenses = Expense.query.filter_by(user_id=current_user.id).all()
     active_recurring = [e for e in all_expenses if e.is_recurring and e.status == "active"]
     monthly_subscription_cost = sum(e.monthly_equivalent for e in active_recurring)
     
     upcoming_renewals = []
+    renewing_this_month_sum = 0.0
     for e in active_recurring:
         next_dt = e.next_renewal_date()
         if next_dt:
@@ -122,21 +140,45 @@ def index():
                     "days_left": days_left,
                     "is_urgent": days_left <= 7,
                 })
+            if next_dt.month == today.month and next_dt.year == today.year:
+                renewing_this_month_sum += e.amount
+
     upcoming_renewals.sort(key=lambda x: x["days_left"])
 
+    # Recent transactions
+    recent_transactions = (
+        Expense.query.filter_by(user_id=current_user.id)
+        .order_by(Expense.date.desc(), Expense.id.desc())
+        .limit(8)
+        .all()
+    )
+
     # Monthly Summary stats
-    largest_category = max(category_totals, key=lambda c: c["total"])["name"] if category_totals else "—"
+    largest_category = max(category_totals, key=lambda c: c["total"]) if category_totals else None
     remaining_budget = (total_budget - total_this_month) if total_budget else None
     daily_average = (total_this_month / today.day) if today.day > 0 else 0
 
+    # Financial Health Score
+    health = calculate_financial_health(current_user.id)
+
     summary = {
+        "total_income": total_income_this_month,
         "total_expenses": total_this_month,
+        "net_balance": net_balance,
+        "savings_rate": savings_rate,
         "total_budget": total_budget,
         "remaining_budget": remaining_budget,
+        "budget_utilization": budget_utilization,
         "daily_average": daily_average,
-        "largest_category": largest_category,
+        "largest_category_name": largest_category["name"] if largest_category else "—",
+        "largest_category_amount": largest_category["total"] if largest_category else 0.0,
+        "mom_pct": mom_pct,
         "active_subscriptions": len(active_recurring),
         "monthly_subscription_cost": monthly_subscription_cost,
+        "renewing_this_month_sum": renewing_this_month_sum,
+        "health_score": health["score"],
+        "health_grade": health["grade"],
+        "health_color": health["color"],
     }
 
     insights = generate_insights(current_user.id)
@@ -148,10 +190,10 @@ def index():
         budget_progress_list=budget_progress_list,
         budget_alerts=budget_alerts,
         trend=trend,
-        budget_vs_spend=budget_vs_spend,
-        top_categories=top_categories,
         upcoming_renewals=upcoming_renewals,
+        recent_transactions=recent_transactions,
         insights=insights,
+        health=health,
         currency_map=CURRENCY_MAP,
     )
 
@@ -184,12 +226,17 @@ def subscriptions():
 
     # Calculate next renewal dates
     renewals_schedule = []
+    renewing_this_month_total = 0.0
     for e in active_recurring:
         next_dt = e.next_renewal_date()
+        days_left = (next_dt - today).days if next_dt else None
+        if next_dt and next_dt.month == today.month and next_dt.year == today.year:
+            renewing_this_month_total += e.amount
+
         renewals_schedule.append({
             "expense": e,
             "next_date": next_dt,
-            "days_left": (next_dt - today).days if next_dt else None,
+            "days_left": days_left,
         })
     renewals_schedule.sort(key=lambda x: (x["days_left"] is None, x["days_left"]))
 
@@ -200,6 +247,7 @@ def subscriptions():
         needs_review=needs_review,
         monthly_burden=monthly_burden,
         annual_burden=annual_burden,
+        renewing_this_month_total=renewing_this_month_total,
         subscription_pct_of_budget=subscription_pct_of_budget,
         ranked=ranked,
         oldest_unreviewed=oldest_unreviewed,
@@ -222,6 +270,7 @@ def renew_subscription(expense_id):
         user_id=current_user.id,
         is_recurring=False,
         status="active",
+        payment_method=source_expense.payment_method,
     )
     source_expense.last_reviewed_date = today
     db.session.add(renewal_expense)
@@ -282,13 +331,15 @@ def export_csv():
             {
                 "id": e.id,
                 "date": e.date.isoformat(),
-                "category": e.category.name,
+                "category": e.category.name if e.category else "",
                 "amount": e.amount,
                 "currency": current_user.currency,
+                "payment_method": e.payment_method,
                 "note": e.note or "",
                 "is_recurring": e.is_recurring,
                 "recurrence_period": e.recurrence_period or "",
                 "status": e.status,
+                "is_anomaly": e.is_anomaly,
             }
             for e in expenses
         ]
@@ -300,17 +351,19 @@ def export_csv():
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["Date", "Category", "Amount", "Currency", "Note", "Recurring", "Recurrence Period", "Status"])
+    writer.writerow(["Date", "Category", "Amount", "Currency", "Payment Method", "Note", "Recurring", "Recurrence Period", "Status", "Is Anomaly"])
     for e in expenses:
         writer.writerow([
             e.date.isoformat(),
-            e.category.name,
+            e.category.name if e.category else "",
             e.amount,
             current_user.currency,
+            e.payment_method,
             e.note or "",
             "Yes" if e.is_recurring else "No",
             e.recurrence_period or "",
             e.status,
+            "Yes" if e.is_anomaly else "No",
         ])
 
     return Response(
@@ -318,4 +371,3 @@ def export_csv():
         mimetype="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename_base}.csv"},
     )
-

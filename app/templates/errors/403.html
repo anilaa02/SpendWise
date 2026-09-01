@@ -1,0 +1,12 @@
+﻿{% extends "base.html" %}
+{% block title %}403 Forbidden - SpendWise{% endblock %}
+{% block content %}
+<div class="error-container">
+    <div class="error-card">
+        <span class="error-code">403</span>
+        <h2>Access Denied</h2>
+        <p>You do not have permission to view or modify this financial resource.</p>
+        <a href="{{ url_for('dashboard.index') }}" class="btn btn-primary">Return to Dashboard</a>
+    </div>
+</div>
+{% endblock %}

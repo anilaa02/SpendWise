@@ -6,13 +6,13 @@ from app.models import User, Category
 auth_bp = Blueprint("auth", __name__)
 
 DEFAULT_CATEGORIES = [
-    ("Groceries", 8000.0),
-    ("Housing & Rent", 15000.0),
-    ("Utilities & Bills", 3500.0),
-    ("Dining Out", 4000.0),
-    ("Subscriptions", 2000.0),
-    ("Transport", 3000.0),
-    ("Entertainment", 2500.0),
+    "Groceries",
+    "Housing & Rent",
+    "Utilities & Bills",
+    "Dining Out",
+    "Subscriptions",
+    "Transport",
+    "Entertainment",
 ]
 
 
@@ -44,9 +44,9 @@ def signup():
         db.session.add(user)
         db.session.flush()
 
-        # Seed standard categories with sensible starting budgets
-        for cat_name, budget in DEFAULT_CATEGORIES:
-            db.session.add(Category(name=cat_name, monthly_budget=budget, user_id=user.id))
+        # Seed standard categories without forced budgets (user can set them optionally)
+        for cat_name in DEFAULT_CATEGORIES:
+            db.session.add(Category(name=cat_name, monthly_budget=None, user_id=user.id))
 
         db.session.commit()
 

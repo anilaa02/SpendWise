@@ -1,22 +1,37 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block title %}Dashboard - SpendWise{% endblock %}
 {% block content %}
 <div class="header-row">
     <div>
         <h1>Financial Dashboard</h1>
-        <p class="section-subtitle">Real-time ledger overview, budget health, and subscription telemetry.</p>
+        <p class="section-subtitle">Real-time ledger overview, cashflow dynamics, budget health, and subscription telemetry.</p>
+    </div>
+    <div class="header-actions">
+        <a href="{{ url_for('income.index') }}" class="btn btn-secondary btn-sm">+ Add Income</a>
+        <a href="{{ url_for('expenses.list_expenses') }}" class="btn btn-primary btn-sm">+ Log Expense</a>
     </div>
 </div>
 
+<!-- Primary Financial KPIs Grid -->
 <div class="summary-grid">
+    <div class="summary-item">
+        <span class="summary-label">Total Monthly Income</span>
+        <span class="summary-value text-emerald">{{ currency_sym }}{{ "%.2f"|format(summary.total_income) }}</span>
+    </div>
     <div class="summary-item">
         <span class="summary-label">Total Spent This Month</span>
         <span class="summary-value">{{ currency_sym }}{{ "%.2f"|format(summary.total_expenses) }}</span>
     </div>
     <div class="summary-item">
-        <span class="summary-label">Total Monthly Budget</span>
-        <span class="summary-value">
-            {% if summary.total_budget %}{{ currency_sym }}{{ "%.0f"|format(summary.total_budget) }}{% else %}—{% endif %}
+        <span class="summary-label">Net Savings / Cashflow</span>
+        <span class="summary-value {% if summary.net_balance >= 0 %}text-emerald{% else %}text-brick{% endif %}">
+            {{ '+' if summary.net_balance > 0 else '' }}{{ currency_sym }}{{ "%.2f"|format(summary.net_balance) }}
+        </span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">Savings Rate</span>
+        <span class="summary-value {% if summary.savings_rate is not none and summary.savings_rate >= 20 %}text-emerald{% elif summary.savings_rate is not none and summary.savings_rate < 0 %}text-brick{% endif %}">
+            {% if summary.savings_rate is not none %}{{ "%.1f"|format(summary.savings_rate) }}%{% else %}—{% endif %}
         </span>
     </div>
     <div class="summary-item">
@@ -28,12 +43,38 @@
         </span>
     </div>
     <div class="summary-item">
-        <span class="summary-label">Avg. Daily Spend</span>
-        <span class="summary-value">{{ currency_sym }}{{ "%.2f"|format(summary.daily_average) }}</span>
-    </div>
-    <div class="summary-item">
         <span class="summary-label">Monthly Subscriptions</span>
         <span class="summary-value">{{ currency_sym }}{{ "%.2f"|format(summary.monthly_subscription_cost) }}</span>
+    </div>
+</div>
+
+<!-- Financial Health & Pacing Row -->
+<div class="health-dash-banner health-{{ summary.health_color }}">
+    <div class="health-dash-left">
+        <div class="health-mini-score">
+            <span class="score-digit">{{ summary.health_score }}</span>
+            <span class="score-denom">/100</span>
+        </div>
+        <div class="health-dash-text">
+            <h4>Financial Health: <span class="badge badge-{{ summary.health_color }}">{{ summary.health_grade }}</span></h4>
+            <p>
+                {% if health.strengths %}
+                    {{ health.strengths[0] }}
+                {% elif health.recommendations %}
+                    {{ health.recommendations[0] }}
+                {% else %}
+                    Keep recording income and expenses to unlock deeper financial diagnostics.
+                {% endif %}
+            </p>
+        </div>
+    </div>
+    <div class="health-dash-right">
+        {% if summary.mom_pct is not none %}
+        <span class="mom-pill {{ 'mom-up text-brick' if summary.mom_pct > 0 else 'mom-down text-emerald' }}">
+            {{ '▲ +' if summary.mom_pct > 0 else '▼ ' }}{{ summary.mom_pct }}% vs. Last Month
+        </span>
+        {% endif %}
+        <a href="{{ url_for('analytics.index') }}" class="btn btn-secondary btn-sm">View Full Diagnostics &rarr;</a>
     </div>
 </div>
 
@@ -42,7 +83,7 @@
     <div class="card-header-flex">
         <h3>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon-inline"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-            Upcoming Renewals in Next 30 Days
+            Upcoming Renewals in Next 30 Days ({{ currency_sym }}{{ "%.2f"|format(summary.renewing_this_month_sum) }} renewing this month)
         </h3>
         <a href="{{ url_for('dashboard.subscriptions') }}" class="view-all-link">Manage in Audit &rarr;</a>
     </div>
@@ -88,11 +129,11 @@
         {% endif %}
     </div>
 
-    <!-- Insights & Suggestions -->
+    <!-- Insights & Observations -->
     <div class="card insights-card">
         <h3>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon-inline"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
-            Insights &amp; Observations
+            SpendWise Insights
         </h3>
         <ul class="insights-list">
             {% for insight in insights %}
@@ -102,21 +143,67 @@
     </div>
 </div>
 
-{% if budget_alerts %}
-<div class="alerts">
-    {% for alert in budget_alerts %}
-        <div class="flash flash-{{ 'error' if alert.level in ['danger','over'] else 'warning' }}">
-            <strong>{{ alert.name }}</strong>: {{ currency_sym }}{{ "%.0f"|format(alert.spent) }} of {{ currency_sym }}{{ "%.0f"|format(alert.budget) }} limit
-            ({{ "%.0f"|format(alert.actual_pct) }}% utilized)
-            {% if alert.level == 'over' %} — Budget exceeded!
-            {% elif alert.level == 'danger' %} — Over 90% reached, immediate attention recommended.
-            {% else %} — 75%+ threshold reached.
-            {% endif %}
-        </div>
-    {% endfor %}
-</div>
-{% endif %}
+<!-- Recent Transactions Ledger -->
+<div class="card">
+    <div class="card-header-flex">
+        <h3>Recent Transactions</h3>
+        <a href="{{ url_for('expenses.list_expenses') }}" class="view-all-link">View All Expenses &rarr;</a>
+    </div>
 
+    {% if recent_transactions %}
+    <div class="table-responsive">
+        <table class="ledger-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Category</th>
+                    <th>Note / Description</th>
+                    <th>Payment Method</th>
+                    <th class="amount-col">Amount</th>
+                    <th class="actions-col">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for exp in recent_transactions %}
+                <tr class="{{ 'anomaly-row' if exp.is_anomaly else '' }}">
+                    <td class="tabular-date">{{ exp.date.strftime('%d %b %Y') }}</td>
+                    <td>
+                        <span class="badge badge-category">{{ exp.category.name }}</span>
+                        {% if exp.is_anomaly %}
+                        <span class="badge badge-anomaly" title="{{ exp.anomaly_reason or 'Unusual spending detected' }}">⚠ Spike</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {{ exp.note or '—' }}
+                        {% if exp.is_recurring %}
+                        <span class="badge badge-recurring">{{ exp.recurrence_period|capitalize }}</span>
+                        {% endif %}
+                    </td>
+                    <td><span class="badge-method">{{ exp.payment_method }}</span></td>
+                    <td class="amount-col"><strong>{{ currency_sym }}{{ "%.2f"|format(exp.amount) }}</strong></td>
+                    <td class="actions-col">
+                        <button type="button" class="action-btn" title="View Details"
+                                onclick="openDetailModal('{{ exp.id }}', '{{ exp.amount }}', '{{ exp.category.name }}', '{{ exp.date.strftime('%d %b %Y') }}', '{{ exp.note|default('', true)|e }}', '{{ exp.payment_method }}', '{{ 'Yes (' + exp.recurrence_period + ')' if exp.is_recurring else 'No' }}', '{{ 'Yes: ' + (exp.anomaly_reason or 'Statistical anomaly') if exp.is_anomaly else 'Normal' }}')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+                        </button>
+                        <form method="POST" action="{{ url_for('expenses.duplicate_expense', expense_id=exp.id) }}" style="display:inline;">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                            <button type="submit" class="action-btn" title="Duplicate to Today">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="empty-state">No transactions recorded yet. Log your first expense above!</p>
+    {% endif %}
+</div>
+
+<!-- Charts Grid -->
 <div class="chart-grid">
     <div class="chart-box">
         <h3>Spend by Category (This Month)</h3>
@@ -126,18 +213,25 @@
         <h3>6-Month Spending Trend</h3>
         <canvas id="trendChart"></canvas>
     </div>
-    {% if budget_vs_spend %}
-    <div class="chart-box">
-        <h3>Budget vs. Actual Spending</h3>
-        <canvas id="budgetChart"></canvas>
+</div>
+
+<!-- Transaction Detail Modal -->
+<div class="modal-backdrop" id="detailModal">
+    <div class="modal-card">
+        <h3>Transaction Receipt Slip</h3>
+        <div class="detail-slip">
+            <div class="slip-row"><span class="slip-label">Amount:</span><span class="slip-val amount" id="detailAmount"></span></div>
+            <div class="slip-row"><span class="slip-label">Category:</span><span class="slip-val" id="detailCategory"></span></div>
+            <div class="slip-row"><span class="slip-label">Date:</span><span class="slip-val" id="detailDate"></span></div>
+            <div class="slip-row"><span class="slip-label">Payment Method:</span><span class="slip-val" id="detailPayment"></span></div>
+            <div class="slip-row"><span class="slip-label">Description:</span><span class="slip-val" id="detailNote"></span></div>
+            <div class="slip-row"><span class="slip-label">Recurring Cadence:</span><span class="slip-val" id="detailRecurring"></span></div>
+            <div class="slip-row"><span class="slip-label">Spending Anomaly:</span><span class="slip-val" id="detailAnomaly"></span></div>
+        </div>
+        <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeDetailModal()">Close</button>
+        </div>
     </div>
-    {% endif %}
-    {% if top_categories %}
-    <div class="chart-box">
-        <h3>Top Spending Categories (All-Time)</h3>
-        <canvas id="topCatChart"></canvas>
-    </div>
-    {% endif %}
 </div>
 
 <script>
@@ -209,59 +303,18 @@ new Chart(document.getElementById('trendChart'), {
     }
 });
 
-{% if budget_vs_spend %}
-new Chart(document.getElementById('budgetChart'), {
-    type: 'bar',
-    data: {
-        labels: {{ budget_vs_spend|map(attribute='name')|list|tojson }},
-        datasets: [
-            { label: 'Spent', data: {{ budget_vs_spend|map(attribute='spent')|list|tojson }}, backgroundColor: '#B23A2F' },
-            { label: 'Budget', data: {{ budget_vs_spend|map(attribute='budget')|list|tojson }}, backgroundColor: '#0F6B4C' }
-        ]
-    },
-    options: {
-        plugins: {
-            legend: { position: 'bottom', labels: { font: { family: 'Inter', size: 11 } } },
-            tooltip: {
-                callbacks: {
-                    label: function(context) {
-                        return ' ' + context.dataset.label + ': {{ currency_sym }}' + Number(context.raw).toFixed(2);
-                    }
-                }
-            }
-        },
-        scales: { y: { ticks: { font: { family: 'JetBrains Mono', size: 10 } } } }
-    }
-});
-{% endif %}
-
-{% if top_categories %}
-new Chart(document.getElementById('topCatChart'), {
-    type: 'bar',
-    data: {
-        labels: {{ top_categories|map(attribute='name')|list|tojson }},
-        datasets: [{
-            label: 'All-Time Spend',
-            data: {{ top_categories|map(attribute='total')|list|tojson }},
-            backgroundColor: '#C89B3C'
-        }]
-    },
-    options: {
-        indexAxis: 'y',
-        plugins: {
-            legend: { display: false },
-            tooltip: {
-                callbacks: {
-                    label: function(context) {
-                        return ' Total: {{ currency_sym }}' + Number(context.raw).toFixed(2);
-                    }
-                }
-            }
-        },
-        scales: { x: { ticks: { font: { family: 'JetBrains Mono', size: 10 } } } }
-    }
-});
-{% endif %}
+function openDetailModal(id, amount, cat, dt, note, payment, recurring, anomaly) {
+    document.getElementById('detailAmount').innerText = '{{ currency_sym }}' + Number(amount).toFixed(2);
+    document.getElementById('detailCategory').innerText = cat;
+    document.getElementById('detailDate').innerText = dt;
+    document.getElementById('detailPayment').innerText = payment;
+    document.getElementById('detailNote').innerText = note || '—';
+    document.getElementById('detailRecurring').innerText = recurring;
+    document.getElementById('detailAnomaly').innerText = anomaly;
+    document.getElementById('detailModal').style.display = 'flex';
+}
+function closeDetailModal() {
+    document.getElementById('detailModal').style.display = 'none';
+}
 </script>
 {% endblock %}
-

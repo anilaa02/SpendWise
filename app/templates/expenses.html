@@ -1,10 +1,10 @@
-{% extends "base.html" %}
+﻿{% extends "base.html" %}
 {% block title %}Expenses &amp; Categories - SpendWise{% endblock %}
 {% block content %}
 <div class="header-row">
     <div>
         <h1>Expenses &amp; Ledger</h1>
-        <p class="section-subtitle">Record transactions, manage category budgets, and bulk import records.</p>
+        <p class="section-subtitle">Record transactions, ML-powered auto-categorization, manage category budgets, and 2-step CSV import.</p>
     </div>
 </div>
 
@@ -15,26 +15,46 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon-inline"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Record Expense
         </h3>
-        <form method="POST" action="{{ url_for('expenses.add_expense') }}">
+        <form method="POST" action="{{ url_for('expenses.add_expense') }}" id="addExpenseForm">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-            <label>Amount ({{ currency_sym }})</label>
-            <input type="number" step="0.01" min="0.01" name="amount" placeholder="0.00" required>
-
-            <label>Category</label>
-            <select name="category_id" required>
-                {% for cat in categories %}
-                    <option value="{{ cat.id }}">{{ cat.name }}</option>
-                {% endfor %}
-            </select>
-
-            <label>Date</label>
-            <input type="date" name="date" value="{{ today_str }}">
 
             <label>Note / Description</label>
-            <input type="text" name="note" placeholder="e.g. Netflix, Trader Joe's, Uber...">
+            <input type="text" name="note" id="expense_note" placeholder="e.g. Swiggy ₹450, Uber ride, Netflix..." autocomplete="off">
+            <div id="ml_suggestion_box" class="ml-suggestion-tag" style="display:none;"></div>
 
-            <label class="checkbox-label">
-                <input type="checkbox" name="is_recurring" id="is_recurring"> Recurring Subscription / Bill
+            <div class="row-fields">
+                <div style="flex:1;">
+                    <label>Amount ({{ currency_sym }})</label>
+                    <input type="number" step="0.01" min="0.01" name="amount" id="expense_amount" placeholder="0.00" required>
+                </div>
+                <div style="flex:1;">
+                    <label>Category</label>
+                    <select name="category_id" id="expense_category" required>
+                        {% for cat in categories %}
+                            <option value="{{ cat.id }}">{{ cat.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div id="anomaly_alert_box" class="anomaly-alert-chip" style="display:none;"></div>
+
+            <div class="row-fields">
+                <div style="flex:1;">
+                    <label>Date</label>
+                    <input type="date" name="date" value="{{ today_str }}" required>
+                </div>
+                <div style="flex:1;">
+                    <label>Payment Method</label>
+                    <select name="payment_method">
+                        {% for pm in payment_methods %}
+                            <option value="{{ pm }}">{{ pm }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <label class="checkbox-label" style="margin-top: 0.5rem;">
+                <input type="checkbox" name="is_recurring" id="is_recurring"> Recurring Subscription / Periodic Bill
             </label>
 
             <div id="recurrence_wrap" style="display:none; margin-top: 0.85rem;">
@@ -46,7 +66,7 @@
                 </select>
             </div>
 
-            <button type="submit" class="btn btn-primary">Save Expense</button>
+            <button type="submit" class="btn btn-primary" style="margin-top: 1rem;">Save Expense</button>
         </form>
     </div>
 
@@ -62,7 +82,7 @@
                 <div class="row-fields">
                     <div style="flex:2;">
                         <label>Category Name</label>
-                        <input type="text" name="name" placeholder="e.g. Healthcare" required>
+                        <input type="text" name="name" placeholder="e.g. Healthcare, Fitness" required>
                     </div>
                     <div style="flex:1;">
                         <label>Budget ({{ currency_sym }})</label>
@@ -93,18 +113,19 @@
             </div>
         </div>
 
-        <!-- Bulk CSV Import Card -->
+        <!-- 2-Step Bulk CSV Import Card -->
         <div class="card">
             <h3>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon-inline"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                Bulk Import Expenses (CSV)
+                Bulk Import Expenses (2-Step Validation)
             </h3>
-            <form method="POST" action="{{ url_for('expenses.import_csv') }}" enctype="multipart/form-data" class="import-form">
+            <p class="field-hint" style="margin-bottom:0.75rem;">Upload a CSV to inspect validation checks, duplicate warnings, and preview before importing.</p>
+            <form method="POST" action="{{ url_for('expenses.preview_csv') }}" enctype="multipart/form-data" class="import-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
                 <input type="file" name="file" accept=".csv" required class="file-input">
-                <div style="margin-top: 0.75rem; display: flex; gap: 0.5rem; align-items: center;">
-                    <button type="submit" class="btn btn-secondary">Upload &amp; Import</button>
-                    <a href="{{ url_for('expenses.sample_csv') }}" class="btn-link" style="font-size:0.85rem;">Download Sample CSV Template</a>
+                <div style="margin-top: 0.75rem; display: flex; gap: 0.75rem; align-items: center;">
+                    <button type="submit" class="btn btn-secondary">Upload &amp; Preview</button>
+                    <a href="{{ url_for('expenses.sample_csv') }}" class="btn-link" style="font-size:0.85rem;">Download Template CSV</a>
                 </div>
             </form>
         </div>
@@ -129,6 +150,15 @@
                 </select>
             </div>
             <div>
+                <label>Payment Method</label>
+                <select name="payment_method">
+                    <option value="">All Methods</option>
+                    {% for pm in payment_methods %}
+                        <option value="{{ pm }}" {% if filters.get('payment_method') == pm %}selected{% endif %}>{{ pm }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
                 <label>From Date</label>
                 <input type="date" name="date_from" value="{{ filters.get('date_from', '') }}">
             </div>
@@ -149,10 +179,15 @@
                 <input type="text" name="keyword" placeholder="Note contains..." value="{{ filters.get('keyword', '') }}">
             </div>
         </div>
-        <label class="checkbox-label" style="margin-bottom: 1rem;">
-            <input type="checkbox" name="recurring_only" {% if filters.get('recurring_only') %}checked{% endif %}> Show recurring expenses / subscriptions only
-        </label>
-        <div>
+        <div class="filter-options-row">
+            <label class="checkbox-label">
+                <input type="checkbox" name="recurring_only" {% if filters.get('recurring_only') %}checked{% endif %}> Subscriptions Only
+            </label>
+            <label class="checkbox-label">
+                <input type="checkbox" name="anomalies_only" {% if filters.get('anomalies_only') %}checked{% endif %}> Spending Spikes Only
+            </label>
+        </div>
+        <div style="margin-top: 1rem;">
             <button type="submit" class="btn btn-primary">Apply Filters</button>
             <a href="{{ url_for('expenses.list_expenses') }}" class="btn btn-secondary" style="text-decoration:none;">Reset</a>
         </div>
@@ -162,7 +197,7 @@
 <!-- Ledger Table Card -->
 <div class="card">
     <div class="card-header-flex">
-        <h3>Transactions ({{ expenses|length }} Records)</h3>
+        <h3>Ledger Transactions ({{ expenses|length }} Records)</h3>
         <div class="export-links">
             <a href="{{ url_for('dashboard.export_csv', scope='all', format='csv') }}" class="btn-link">&darr; Export CSV</a>
             <a href="{{ url_for('dashboard.export_csv', scope='all', format='json') }}" class="btn-link">&darr; Export JSON</a>
@@ -175,19 +210,25 @@
                 <tr>
                     <th>Date</th>
                     <th>Category</th>
+                    <th>Note / Description</th>
+                    <th>Payment Method</th>
+                    <th>Cadence</th>
                     <th style="text-align:right;">Amount</th>
-                    <th>Note</th>
-                    <th>Type / Status</th>
                     <th style="text-align:right;">Actions</th>
                 </tr>
             </thead>
             <tbody>
                 {% for e in expenses %}
-                <tr>
-                    <td style="white-space:nowrap;">{{ e.date.strftime('%d %b %Y') }}</td>
-                    <td><span class="category-badge">{{ e.category.name }}</span></td>
-                    <td class="amount amount-strong">{{ currency_sym }}{{ "%.2f"|format(e.amount) }}</td>
+                <tr class="{{ 'anomaly-row' if e.is_anomaly else '' }}">
+                    <td style="white-space:nowrap;" class="tabular-date">{{ e.date.strftime('%d %b %Y') }}</td>
+                    <td>
+                        <span class="category-badge">{{ e.category.name }}</span>
+                        {% if e.is_anomaly %}
+                        <span class="badge badge-anomaly" title="{{ e.anomaly_reason or 'Unusual spend detected' }}">⚠ Spike</span>
+                        {% endif %}
+                    </td>
                     <td>{{ e.note or "-" }}</td>
+                    <td><span class="badge-method">{{ e.payment_method }}</span></td>
                     <td>
                         {% if e.is_recurring %}
                             <span class="tag tag-recurring">{{ e.recurrence_period|capitalize }}</span>
@@ -198,8 +239,19 @@
                             <span class="text-faint">One-time</span>
                         {% endif %}
                     </td>
+                    <td class="amount amount-strong">{{ currency_sym }}{{ "%.2f"|format(e.amount) }}</td>
                     <td style="text-align:right; white-space:nowrap;">
-                        <button type="button" class="btn-icon" title="Edit Expense" onclick="openEditExpenseModal({{ e.id }}, {{ e.amount }}, {{ e.category_id }}, '{{ e.date.strftime('%Y-%m-%d') }}', '{{ e.note|escape or '' }}', {{ 'true' if e.is_recurring else 'false' }}, '{{ e.recurrence_period or 'monthly' }}', '{{ e.status }}')">
+                        <button type="button" class="btn-icon" title="View Details"
+                                onclick="openDetailModal('{{ e.id }}', '{{ e.amount }}', '{{ e.category.name }}', '{{ e.date.strftime('%d %b %Y') }}', '{{ e.note|default('', true)|e }}', '{{ e.payment_method }}', '{{ 'Yes (' + e.recurrence_period + ')' if e.is_recurring else 'No' }}', '{{ 'Yes: ' + (e.anomaly_reason or 'Statistical anomaly') if e.is_anomaly else 'Normal' }}')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+                        </button>
+                        <form method="POST" action="{{ url_for('expenses.duplicate_expense', expense_id=e.id) }}" style="display:inline;">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                            <button type="submit" class="btn-icon" title="Duplicate to Today">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                            </button>
+                        </form>
+                        <button type="button" class="btn-icon" title="Edit Expense" onclick="openEditExpenseModal({{ e.id }}, {{ e.amount }}, {{ e.category_id }}, '{{ e.date.strftime('%Y-%m-%d') }}', '{{ e.note|escape or '' }}', '{{ e.payment_method }}', {{ 'true' if e.is_recurring else 'false' }}, '{{ e.recurrence_period or 'monthly' }}', '{{ e.status }}')">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                         </button>
                         <form method="POST" action="{{ url_for('expenses.delete_expense', expense_id=e.id) }}" style="display:inline;" onsubmit="return confirm('Delete this expense entry?');">
@@ -232,6 +284,13 @@
             <select name="category_id" id="modal_expense_category" required>
                 {% for cat in categories %}
                     <option value="{{ cat.id }}">{{ cat.name }}</option>
+                {% endfor %}
+            </select>
+
+            <label>Payment Method</label>
+            <select name="payment_method" id="modal_expense_payment">
+                {% for pm in payment_methods %}
+                    <option value="{{ pm }}">{{ pm }}</option>
                 {% endfor %}
             </select>
 
@@ -289,7 +348,27 @@
     </div>
 </div>
 
+<!-- Transaction Detail Modal -->
+<div class="modal-backdrop" id="detailModal">
+    <div class="modal-card">
+        <h3>Transaction Receipt Slip</h3>
+        <div class="detail-slip">
+            <div class="slip-row"><span class="slip-label">Amount:</span><span class="slip-val amount" id="detailAmount"></span></div>
+            <div class="slip-row"><span class="slip-label">Category:</span><span class="slip-val" id="detailCategory"></span></div>
+            <div class="slip-row"><span class="slip-label">Date:</span><span class="slip-val" id="detailDate"></span></div>
+            <div class="slip-row"><span class="slip-label">Payment Method:</span><span class="slip-val" id="detailPayment"></span></div>
+            <div class="slip-row"><span class="slip-label">Description:</span><span class="slip-val" id="detailNote"></span></div>
+            <div class="slip-row"><span class="slip-label">Recurring Cadence:</span><span class="slip-val" id="detailRecurring"></span></div>
+            <div class="slip-row"><span class="slip-label">Spending Anomaly:</span><span class="slip-val" id="detailAnomaly"></span></div>
+        </div>
+        <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" onclick="closeDetailModal()">Close</button>
+        </div>
+    </div>
+</div>
+
 <script>
+// Toggle recurrence fields
 document.getElementById('is_recurring').addEventListener('change', function() {
     document.getElementById('recurrence_wrap').style.display = this.checked ? 'block' : 'none';
 });
@@ -298,11 +377,79 @@ document.getElementById('modal_expense_recurring').addEventListener('change', fu
     document.getElementById('modal_recurrence_wrap').style.display = this.checked ? 'block' : 'none';
 });
 
-function openEditExpenseModal(id, amount, categoryId, dateStr, note, isRecurring, period, status) {
+// ML-Based Expense Categorization Asynchronous Prediction
+let mlTimeout = null;
+const noteInput = document.getElementById('expense_note');
+const catSelect = document.getElementById('expense_category');
+const mlBox = document.getElementById('ml_suggestion_box');
+
+noteInput.addEventListener('input', function() {
+    clearTimeout(mlTimeout);
+    const text = this.value.trim();
+    if (text.length < 3) {
+        mlBox.style.display = 'none';
+        return;
+    }
+    mlTimeout = setTimeout(() => {
+        fetch('/api/predict-category', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ note: text })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data && data.predicted_category && data.confidence_pct >= 40) {
+                mlBox.innerHTML = '⚡ <strong>ML Prediction:</strong> ' + data.predicted_category + ' (' + data.confidence_pct + '% confidence)';
+                mlBox.style.display = 'block';
+                if (data.category_id) {
+                    catSelect.value = data.category_id;
+                    checkAnomaly();
+                }
+            } else {
+                mlBox.style.display = 'none';
+            }
+        })
+        .catch(() => { mlBox.style.display = 'none'; });
+    }, 250);
+});
+
+// Real-time Anomaly Detection
+const amountInput = document.getElementById('expense_amount');
+const anomalyBox = document.getElementById('anomaly_alert_box');
+
+function checkAnomaly() {
+    const amt = parseFloat(amountInput.value);
+    const catId = parseInt(catSelect.value);
+    if (!amt || amt <= 0 || !catId) {
+        anomalyBox.style.display = 'none';
+        return;
+    }
+    fetch('/api/check-anomaly', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: amt, category_id: catId })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data && data.is_anomaly) {
+            anomalyBox.innerHTML = '⚠ <strong>Spending Spike Notice:</strong> ' + (data.reason || 'Significantly higher than typical spending.');
+            anomalyBox.style.display = 'block';
+        } else {
+            anomalyBox.style.display = 'none';
+        }
+    })
+    .catch(() => { anomalyBox.style.display = 'none'; });
+}
+
+amountInput.addEventListener('blur', checkAnomaly);
+catSelect.addEventListener('change', checkAnomaly);
+
+function openEditExpenseModal(id, amount, categoryId, dateStr, note, paymentMethod, isRecurring, period, status) {
     const form = document.getElementById('editExpenseForm');
     form.action = `/expenses/${id}/edit`;
     document.getElementById('modal_expense_amount').value = amount;
     document.getElementById('modal_expense_category').value = categoryId;
+    document.getElementById('modal_expense_payment').value = paymentMethod || 'UPI / Online';
     document.getElementById('modal_expense_date').value = dateStr;
     document.getElementById('modal_expense_note').value = note;
     
@@ -330,6 +477,20 @@ function openEditCategoryModal(id, name, budget) {
 function closeEditCategoryModal() {
     document.getElementById('editCategoryModal').style.display = 'none';
 }
+
+function openDetailModal(id, amount, cat, dt, note, payment, recurring, anomaly) {
+    document.getElementById('detailAmount').innerText = '{{ currency_sym }}' + Number(amount).toFixed(2);
+    document.getElementById('detailCategory').innerText = cat;
+    document.getElementById('detailDate').innerText = dt;
+    document.getElementById('detailPayment').innerText = payment;
+    document.getElementById('detailNote').innerText = note || '—';
+    document.getElementById('detailRecurring').innerText = recurring;
+    document.getElementById('detailAnomaly').innerText = anomaly;
+    document.getElementById('detailModal').style.display = 'flex';
+}
+
+function closeDetailModal() {
+    document.getElementById('detailModal').style.display = 'none';
+}
 </script>
 {% endblock %}
-

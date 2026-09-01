@@ -1,0 +1,171 @@
+﻿{% extends "base.html" %}
+{% block title %}Income Management - SpendWise{% endblock %}
+
+{% block content %}
+<div class="header-row">
+    <div>
+        <h1>Income Streams</h1>
+        <p class="section-subtitle">Record and categorize earnings, freelance payouts, salary, and capital gains.</p>
+    </div>
+    <button type="button" class="btn btn-primary" onclick="openAddIncomeModal()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="icon-inline"><path d="M12 5v14M5 12h14"/></svg>
+        Log Income
+    </button>
+</div>
+
+<div class="summary-grid">
+    <div class="summary-item">
+        <span class="summary-label">Income This Month</span>
+        <span class="summary-value text-emerald">{{ currency_sym }}{{ "%.2f"|format(total_month_income) }}</span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">All-Time Recorded Income</span>
+        <span class="summary-value">{{ currency_sym }}{{ "%.2f"|format(all_time_income) }}</span>
+    </div>
+</div>
+
+<!-- Month Filter & Ledger -->
+<div class="card">
+    <div class="card-header-flex">
+        <h3>Income Ledger</h3>
+        <form method="GET" action="{{ url_for('income.index') }}" class="filter-row">
+            <select name="month" onchange="this.form.submit()">
+                {% for m in range(1, 13) %}
+                <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>
+                    {{ ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m-1] }}
+                </option>
+                {% endfor %}
+            </select>
+            <select name="year" onchange="this.form.submit()">
+                {% for y in range(today.year - 2, today.year + 2) %}
+                <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
+                {% endfor %}
+            </select>
+        </form>
+    </div>
+
+    {% if incomes %}
+    <div class="table-responsive">
+        <table class="ledger-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Source</th>
+                    <th>Note / Description</th>
+                    <th class="amount-col">Amount</th>
+                    <th class="actions-col">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for inc in incomes %}
+                <tr>
+                    <td class="tabular-date">{{ inc.date.strftime('%d %b %Y') }}</td>
+                    <td>
+                        <span class="badge badge-source">{{ inc.source }}</span>
+                    </td>
+                    <td>{{ inc.note or '—' }}</td>
+                    <td class="amount-col text-emerald"><strong>+ {{ currency_sym }}{{ "%.2f"|format(inc.amount) }}</strong></td>
+                    <td class="actions-col">
+                        <button type="button" class="action-btn edit-btn" title="Edit"
+                                onclick="openEditIncomeModal({{ inc.id }}, '{{ inc.amount }}', '{{ inc.source }}', '{{ inc.date.isoformat() }}', '{{ inc.note|default('', true)|e }}')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                        </button>
+                        <form method="POST" action="{{ url_for('income.delete', income_id=inc.id) }}" style="display:inline;" onsubmit="return confirm('Remove this income entry?');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                            <button type="submit" class="action-btn delete-btn" title="Delete">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="empty-state">No income entries recorded for this month. Click <strong>Log Income</strong> to get started.</p>
+    {% endif %}
+</div>
+
+<!-- Add Income Modal -->
+<div class="modal-backdrop" id="addIncomeModal">
+    <div class="modal-card">
+        <h3>Log Income Stream</h3>
+        <form method="POST" action="{{ url_for('income.add') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
+            <label>Amount ({{ currency_sym }})</label>
+            <input type="number" step="0.01" name="amount" placeholder="e.g. 75000" required>
+
+            <label>Source / Category</label>
+            <select name="source">
+                {% for s in sources %}
+                <option value="{{ s }}">{{ s }}</option>
+                {% endfor %}
+            </select>
+
+            <label>Date</label>
+            <input type="date" name="date" value="{{ today.isoformat() }}" required>
+
+            <label>Note / Payer</label>
+            <input type="text" name="note" placeholder="e.g. Acme Corp Salary, Upwork Payout">
+
+            <div class="modal-actions">
+                <button type="submit" class="btn btn-primary">Save Income</button>
+                <button type="button" class="btn btn-secondary" onclick="closeAddIncomeModal()">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Income Modal -->
+<div class="modal-backdrop" id="editIncomeModal">
+    <div class="modal-card">
+        <h3>Edit Income Record</h3>
+        <form method="POST" id="editIncomeForm" action="">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
+            <label>Amount ({{ currency_sym }})</label>
+            <input type="number" step="0.01" name="amount" id="editIncomeAmount" required>
+
+            <label>Source / Category</label>
+            <select name="source" id="editIncomeSource">
+                {% for s in sources %}
+                <option value="{{ s }}">{{ s }}</option>
+                {% endfor %}
+            </select>
+
+            <label>Date</label>
+            <input type="date" name="date" id="editIncomeDate" required>
+
+            <label>Note / Payer</label>
+            <input type="text" name="note" id="editIncomeNote">
+
+            <div class="modal-actions">
+                <button type="submit" class="btn btn-primary">Update</button>
+                <button type="button" class="btn btn-secondary" onclick="closeEditIncomeModal()">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function openAddIncomeModal() {
+    document.getElementById('addIncomeModal').style.display = 'flex';
+}
+function closeAddIncomeModal() {
+    document.getElementById('addIncomeModal').style.display = 'none';
+}
+function openEditIncomeModal(id, amount, source, dateVal, note) {
+    document.getElementById('editIncomeForm').action = '/income/' + id + '/edit';
+    document.getElementById('editIncomeAmount').value = amount;
+    document.getElementById('editIncomeSource').value = source;
+    document.getElementById('editIncomeDate').value = dateVal;
+    document.getElementById('editIncomeNote').value = note;
+    document.getElementById('editIncomeModal').style.display = 'flex';
+}
+function closeEditIncomeModal() {
+    document.getElementById('editIncomeModal').style.display = 'none';
+}
+</script>
+{% endblock %}

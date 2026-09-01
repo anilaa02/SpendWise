@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, render_template
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
 from flask_wtf.csrf import CSRFProtect
@@ -36,30 +36,67 @@ def create_app(config_class=Config):
     from app.routes.auth import auth_bp
     from app.routes.expenses import expenses_bp
     from app.routes.dashboard import dashboard_bp
+    from app.routes.income import income_bp
+    from app.routes.goals import goals_bp
+    from app.routes.analytics import analytics_bp
+    from app.routes.api import api_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(expenses_bp)
     app.register_blueprint(dashboard_bp)
+    app.register_blueprint(income_bp)
+    app.register_blueprint(goals_bp)
+    app.register_blueprint(analytics_bp)
+    app.register_blueprint(api_bp)
+
+    # Allow JSON API endpoints to be invoked via frontend fetch/XHR
+    csrf.exempt(api_bp)
+
+    # Custom HTTP error handlers
+    @app.errorhandler(400)
+    def bad_request_error(e):
+        return render_template("errors/400.html"), 400
+
+    @app.errorhandler(403)
+    def forbidden_error(e):
+        return render_template("errors/403.html"), 403
+
+    @app.errorhandler(404)
+    def not_found_error(e):
+        return render_template("errors/404.html"), 404
+
+    @app.errorhandler(500)
+    def internal_error(e):
+        db.session.rollback()
+        return render_template("errors/500.html"), 500
 
     with app.app_context():
         db.create_all()
 
         # Automatic SQLite schema migration for older database files:
-        # Ensures `user.currency` and `expense.status` exist without losing existing data.
         try:
             with db.engine.connect() as conn:
+                # User table migration
                 user_cols = [r[1] for r in conn.exec_driver_sql("PRAGMA table_info(user)").fetchall()]
                 if "currency" not in user_cols:
                     conn.exec_driver_sql("ALTER TABLE user ADD COLUMN currency VARCHAR(10) DEFAULT 'INR' NOT NULL")
 
+                # Expense table migration
                 expense_cols = [r[1] for r in conn.exec_driver_sql("PRAGMA table_info(expense)").fetchall()]
                 if "status" not in expense_cols:
                     conn.exec_driver_sql("ALTER TABLE expense ADD COLUMN status VARCHAR(20) DEFAULT 'active' NOT NULL")
+                if "payment_method" not in expense_cols:
+                    conn.exec_driver_sql("ALTER TABLE expense ADD COLUMN payment_method VARCHAR(50) DEFAULT 'UPI / Online' NOT NULL")
+                if "is_anomaly" not in expense_cols:
+                    conn.exec_driver_sql("ALTER TABLE expense ADD COLUMN is_anomaly BOOLEAN DEFAULT 0 NOT NULL")
+                if "anomaly_reason" not in expense_cols:
+                    conn.exec_driver_sql("ALTER TABLE expense ADD COLUMN anomaly_reason VARCHAR(255)")
 
                 conn.commit()
         except Exception as e:
             app.logger.warning(f"Database schema auto-migration notice: {e}")
 
     return app
+
 
 

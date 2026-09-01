@@ -1,0 +1,257 @@
+﻿{% extends "base.html" %}
+{% block title %}Financial Analytics - SpendWise{% endblock %}
+
+{% block content %}
+<div class="header-row">
+    <div>
+        <h1>Financial Analytics & Telemetry</h1>
+        <p class="section-subtitle">Deep dive into cashflow dynamics, budget health, category distribution, and financial vitality.</p>
+    </div>
+</div>
+
+<!-- Financial Health Banner -->
+<div class="card health-card health-{{ health.color }}">
+    <div class="health-overview">
+        <div class="health-score-circle">
+            <span class="health-score-num">{{ health.score }}</span>
+            <span class="health-score-max">/ 100</span>
+        </div>
+        <div class="health-details">
+            <div class="health-badge-row">
+                <span class="health-badge badge-{{ health.color }}">{{ health.grade }} Financial Health</span>
+                <span class="health-metric-tag">Monthly Spend: {{ currency_sym }}{{ "%.2f"|format(total_current_expense) }}</span>
+            </div>
+            <div class="health-pillars-grid">
+                <div class="pillar-item">
+                    <span class="pillar-label">Budget Control</span>
+                    <span class="pillar-score">{{ health.pillar_scores.budget }} / 25</span>
+                </div>
+                <div class="pillar-item">
+                    <span class="pillar-label">Savings Rate</span>
+                    <span class="pillar-score">{{ health.pillar_scores.savings }} / 20</span>
+                </div>
+                <div class="pillar-item">
+                    <span class="pillar-label">Cashflow Margin</span>
+                    <span class="pillar-score">{{ health.pillar_scores.cashflow }} / 20</span>
+                </div>
+                <div class="pillar-item">
+                    <span class="pillar-label">Subscriptions</span>
+                    <span class="pillar-score">{{ health.pillar_scores.subscriptions }} / 15</span>
+                </div>
+                <div class="pillar-item">
+                    <span class="pillar-label">Spend Stability</span>
+                    <span class="pillar-score">{{ health.pillar_scores.stability }} / 10</span>
+                </div>
+                <div class="pillar-item">
+                    <span class="pillar-label">Goals Momentum</span>
+                    <span class="pillar-score">{{ health.pillar_scores.goals }} / 10</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="health-feedback-grid">
+        {% if health.strengths %}
+        <div class="feedback-col">
+            <h4><span class="dot dot-green"></span> Key Strengths</h4>
+            <ul class="feedback-list">
+                {% for s in health.strengths %}
+                <li>✓ {{ s }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+        {% if health.recommendations %}
+        <div class="feedback-col">
+            <h4><span class="dot dot-amber"></span> Recommendations</h4>
+            <ul class="feedback-list">
+                {% for r in health.recommendations %}
+                <li>→ {{ r }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Charts Grid -->
+<div class="chart-grid">
+    <div class="chart-box">
+        <h3>Income vs. Expenses (6-Month Trend)</h3>
+        <canvas id="incomeVsExpenseChart"></canvas>
+    </div>
+    <div class="chart-box">
+        <h3>Net Savings Cashflow Trend</h3>
+        <canvas id="netSavingsChart"></canvas>
+    </div>
+    <div class="chart-box">
+        <h3>Category Spending Share (This Month)</h3>
+        <canvas id="categoryDistChart"></canvas>
+    </div>
+    <div class="chart-box">
+        <h3>Budget vs. Actual Spending</h3>
+        <canvas id="budgetVarianceChart"></canvas>
+    </div>
+</div>
+
+<script>
+const LEDGER_PALETTE = ['#0F6B4C','#C89B3C','#B23A2F','#5B7A8C','#8A6A1F','#4A8C6F','#94A3AD','#2F4858'];
+const monthsLabels = {{ months_labels|tojson }};
+const expenseData = {{ expense_trend|tojson }};
+const incomeData = {{ income_trend|tojson }};
+const netSavingsData = {{ net_savings_trend|tojson }};
+
+// 1. Income vs Expense Trend
+new Chart(document.getElementById('incomeVsExpenseChart'), {
+    type: 'bar',
+    data: {
+        labels: monthsLabels,
+        datasets: [
+            {
+                label: 'Income',
+                data: incomeData,
+                backgroundColor: 'rgba(15, 107, 76, 0.85)',
+                borderRadius: 4,
+            },
+            {
+                label: 'Expenses',
+                data: expenseData,
+                backgroundColor: 'rgba(178, 58, 47, 0.85)',
+                borderRadius: 4,
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: { position: 'bottom' },
+            tooltip: {
+                callbacks: {
+                    label: function(ctx) {
+                        return ' ' + ctx.dataset.label + ': {{ currency_sym }}' + Number(ctx.raw).toFixed(2);
+                    }
+                }
+            }
+        },
+        scales: {
+            y: { ticks: { font: { family: 'JetBrains Mono', size: 10 } } }
+        }
+    }
+});
+
+// 2. Net Savings Trend
+new Chart(document.getElementById('netSavingsChart'), {
+    type: 'line',
+    data: {
+        labels: monthsLabels,
+        datasets: [{
+            label: 'Net Balance',
+            data: netSavingsData,
+            borderColor: '#C89B3C',
+            backgroundColor: 'rgba(200, 155, 60, 0.1)',
+            fill: true,
+            tension: 0.35,
+            pointRadius: 4,
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                callbacks: {
+                    label: function(ctx) {
+                        return ' Net: {{ currency_sym }}' + Number(ctx.raw).toFixed(2);
+                    }
+                }
+            }
+        },
+        scales: {
+            y: { ticks: { font: { family: 'JetBrains Mono', size: 10 } } }
+        }
+    }
+});
+
+// 3. Category Distribution
+const catBreakdown = {{ category_breakdown|tojson }};
+const catLabels = catBreakdown.map(c => c.name);
+const catValues = catBreakdown.map(c => c.amount);
+
+if (catValues.length > 0) {
+    new Chart(document.getElementById('categoryDistChart'), {
+        type: 'doughnut',
+        data: {
+            labels: catLabels,
+            datasets: [{
+                data: catValues,
+                backgroundColor: LEDGER_PALETTE,
+                borderWidth: 2,
+                borderColor: '#FFFFFF',
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { position: 'bottom' },
+                tooltip: {
+                    callbacks: {
+                        label: function(ctx) {
+                            return ' ' + ctx.label + ': {{ currency_sym }}' + Number(ctx.raw).toFixed(2);
+                        }
+                    }
+                }
+            }
+        }
+    });
+} else {
+    document.getElementById('categoryDistChart').parentElement.innerHTML += '<p class="empty-state">No category spending recorded for this month.</p>';
+}
+
+// 4. Budget Variance
+const budgetComp = {{ budget_comparison|tojson }};
+const budgetLabels = budgetComp.map(b => b.name);
+const spentValues = budgetComp.map(b => b.spent);
+const limitValues = budgetComp.map(b => b.budget);
+
+if (budgetLabels.length > 0) {
+    new Chart(document.getElementById('budgetVarianceChart'), {
+        type: 'bar',
+        data: {
+            labels: budgetLabels,
+            datasets: [
+                {
+                    label: 'Actual Spent',
+                    data: spentValues,
+                    backgroundColor: '#B23A2F',
+                    borderRadius: 4,
+                },
+                {
+                    label: 'Budget Limit',
+                    data: limitValues,
+                    backgroundColor: '#0F6B4C',
+                    borderRadius: 4,
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { position: 'bottom' },
+                tooltip: {
+                    callbacks: {
+                        label: function(ctx) {
+                            return ' ' + ctx.dataset.label + ': {{ currency_sym }}' + Number(ctx.raw).toFixed(2);
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: { ticks: { font: { family: 'JetBrains Mono', size: 10 } } }
+            }
+        }
+    });
+} else {
+    document.getElementById('budgetVarianceChart').parentElement.innerHTML += '<p class="empty-state">No category budgets configured yet.</p>';
+}
+</script>
+{% endblock %}

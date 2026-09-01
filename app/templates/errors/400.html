@@ -1,0 +1,12 @@
+﻿{% extends "base.html" %}
+{% block title %}400 Bad Request - SpendWise{% endblock %}
+{% block content %}
+<div class="error-container">
+    <div class="error-card">
+        <span class="error-code">400</span>
+        <h2>Invalid Request</h2>
+        <p>The server could not understand your request. Please verify the submitted data and try again.</p>
+        <a href="{{ url_for('dashboard.index') }}" class="btn btn-primary">Return to Dashboard</a>
+    </div>
+</div>
+{% endblock %}

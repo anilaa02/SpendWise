@@ -1,0 +1,160 @@
+﻿{% extends "base.html" %}
+{% block title %}CSV Import Validation Preview - SpendWise{% endblock %}
+
+{% block content %}
+<div class="header-row">
+    <div>
+        <h1>CSV Import Validation Preview</h1>
+        <p class="section-subtitle">Review parsed transactions, duplicate alerts, and validation checks before committing to your ledger.</p>
+    </div>
+</div>
+
+<!-- Validation Metrics Summary Banner -->
+<div class="summary-grid">
+    <div class="summary-item">
+        <span class="summary-label">Total Detected</span>
+        <span class="summary-value">{{ total_detected }}</span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">✓ Ready to Import</span>
+        <span class="summary-value text-emerald">{{ valid_rows|length }}</span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">⚠ Potential Duplicates</span>
+        <span class="summary-value text-brass">{{ duplicate_rows|length }}</span>
+    </div>
+    <div class="summary-item">
+        <span class="summary-label">✕ Invalid / Skipped Rows</span>
+        <span class="summary-value text-brick">{{ invalid_rows|length }}</span>
+    </div>
+</div>
+
+<!-- Confirmation Form -->
+<form method="POST" action="{{ url_for('expenses.confirm_import') }}" class="import-confirm-box">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+    <input type="hidden" name="valid_data" value="{{ valid_json|e }}"/>
+    <input type="hidden" name="duplicate_data" value="{{ duplicate_json|e }}"/>
+
+    {% if duplicate_rows %}
+    <div class="duplicate-prompt">
+        <label class="checkbox-label">
+            <input type="checkbox" name="include_duplicates" value="1">
+            <strong>Also import {{ duplicate_rows|length }} potential duplicate transaction(s)</strong>
+        </label>
+        <p class="field-hint">These records match existing entries in your ledger with the exact same date, amount, category, and note.</p>
+    </div>
+    {% endif %}
+
+    <div class="action-buttons-row">
+        {% if valid_rows or duplicate_rows %}
+        <button type="submit" class="btn btn-primary">
+            Confirm & Import Transactions
+        </button>
+        {% endif %}
+        <a href="{{ url_for('expenses.list_expenses') }}" class="btn btn-secondary">Cancel & Discard</a>
+    </div>
+</form>
+
+<!-- Invalid Rows Diagnostic (if any) -->
+{% if invalid_rows %}
+<div class="card warning-card">
+    <h3 class="text-brick">✕ Invalid / Unparseable Rows ({{ invalid_rows|length }})</h3>
+    <p class="card-subtitle">These rows cannot be imported due to formatting issues or negative/missing values.</p>
+    <div class="table-responsive">
+        <table class="ledger-table">
+            <thead>
+                <tr>
+                    <th>Row #</th>
+                    <th>Validation Error</th>
+                    <th>Raw Row Data</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for inv in invalid_rows %}
+                <tr>
+                    <td class="tabular-date">{{ inv.row }}</td>
+                    <td class="text-brick"><strong>{{ inv.error }}</strong></td>
+                    <td><code>{{ inv.data }}</code></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Valid Rows Preview Table -->
+{% if valid_rows %}
+<div class="card">
+    <h3>✓ Valid Transactions ({{ valid_rows|length }})</h3>
+    <div class="table-responsive">
+        <table class="ledger-table">
+            <thead>
+                <tr>
+                    <th>Row</th>
+                    <th>Date</th>
+                    <th>Category</th>
+                    <th>Payment Method</th>
+                    <th>Note</th>
+                    <th>Recurring</th>
+                    <th class="amount-col">Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in valid_rows %}
+                <tr>
+                    <td class="tabular-date">{{ r.row_num }}</td>
+                    <td class="tabular-date">{{ r.date }}</td>
+                    <td><span class="badge badge-category">{{ r.category }}</span></td>
+                    <td>{{ r.payment_method }}</td>
+                    <td>{{ r.note or '—' }}</td>
+                    <td>
+                        {% if r.is_recurring %}
+                        <span class="badge badge-recurring">Yes ({{ r.recurrence_period }})</span>
+                        {% else %}
+                        No
+                        {% endif %}
+                    </td>
+                    <td class="amount-col"><strong>{{ currency_sym }}{{ "%.2f"|format(r.amount) }}</strong></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Duplicate Rows Preview Table -->
+{% if duplicate_rows %}
+<div class="card">
+    <h3 class="text-brass">⚠ Potential Duplicate Transactions ({{ duplicate_rows|length }})</h3>
+    <div class="table-responsive">
+        <table class="ledger-table">
+            <thead>
+                <tr>
+                    <th>Row</th>
+                    <th>Date</th>
+                    <th>Category</th>
+                    <th>Note</th>
+                    <th class="amount-col">Amount</th>
+                    <th>Duplicate Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for d in duplicate_rows %}
+                <tr>
+                    <td class="tabular-date">{{ d.row_num }}</td>
+                    <td class="tabular-date">{{ d.date }}</td>
+                    <td><span class="badge badge-category">{{ d.category }}</span></td>
+                    <td>{{ d.note or '—' }}</td>
+                    <td class="amount-col"><strong>{{ currency_sym }}{{ "%.2f"|format(d.amount) }}</strong></td>
+                    <td><span class="badge badge-warning">Exact Match in Ledger</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}
